@@ -34,6 +34,11 @@ type FeatureUpdate struct {
 	WorktreePath *string   `json:"worktree_path,omitempty"`
 }
 
+type FeatureContext struct {
+	Feature        Feature   `json:"feature"`
+	RecentSessions []Session `json:"recent_sessions"`
+}
+
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
 
 func slugify(title string) string {
@@ -288,4 +293,30 @@ func scanSessions(rows *sql.Rows) ([]Session, error) {
 		sessions = append(sessions, sess)
 	}
 	return sessions, nil
+}
+
+func (s *Store) GetContext(id string) (*FeatureContext, error) {
+	f, err := s.GetFeature(id)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.Query(
+		`SELECT id, COALESCE(feature_id, ''), summary, files_touched, commits, auto_linked, link_reason, created_at FROM sessions WHERE feature_id = ? ORDER BY created_at DESC LIMIT 5`,
+		id,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	sessions, err := scanSessions(rows)
+	if err != nil {
+		return nil, err
+	}
+	if sessions == nil {
+		sessions = []Session{}
+	}
+
+	return &FeatureContext{Feature: *f, RecentSessions: sessions}, nil
 }

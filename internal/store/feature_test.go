@@ -94,3 +94,35 @@ func TestListFeatures(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestGetContext(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Bluetooth Panel", "BT device management")
+	s.UpdateFeature("bluetooth-panel", FeatureUpdate{
+		Status:       strPtr("in_progress"),
+		LeftOff:      strPtr("handle disconnect events"),
+		WorktreePath: strPtr("/tmp/worktrees/bluetooth-panel"),
+		KeyFiles:     &[]string{"internal/wm/bluetooth.go", "internal/wm/wm.go"},
+	})
+	s.LogSession(SessionInput{FeatureID: "bluetooth-panel", Summary: "Added scanning overlay"})
+	s.LogSession(SessionInput{FeatureID: "bluetooth-panel", Summary: "Initial panel layout"})
+
+	ctx, err := s.GetContext("bluetooth-panel")
+	if err != nil {
+		t.Fatalf("GetContext: %v", err)
+	}
+	if ctx.Feature.Status != "in_progress" {
+		t.Errorf("Status = %q", ctx.Feature.Status)
+	}
+	if len(ctx.RecentSessions) != 2 {
+		t.Errorf("RecentSessions = %d, want 2", len(ctx.RecentSessions))
+	}
+}
+
+func TestGetContextNotFound(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.GetContext("nonexistent")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
