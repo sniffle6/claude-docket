@@ -96,3 +96,37 @@ func TestFullWorkflowViaStore(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+func TestNotesInWorkflow(t *testing.T) {
+	s := testStore(t)
+
+	f, err := s.AddFeature("Notes Feature", "testing notes in MCP")
+	if err != nil {
+		t.Fatalf("AddFeature: %v", err)
+	}
+
+	err = s.UpdateFeature(f.ID, store.FeatureUpdate{Notes: strPtr("user notes here")})
+	if err != nil {
+		t.Fatalf("UpdateFeature: %v", err)
+	}
+
+	f, _ = s.GetFeature(f.ID)
+	if f.Notes != "user notes here" {
+		t.Errorf("Notes = %q, want %q", f.Notes, "user notes here")
+	}
+}
+
+func TestDevCompleteStatusInWorkflow(t *testing.T) {
+	s := testStore(t)
+
+	s.AddFeature("Dev Done Feature", "")
+	err := s.UpdateFeature("dev-done-feature", store.FeatureUpdate{Status: strPtr("dev_complete")})
+	if err != nil {
+		t.Fatalf("UpdateFeature: %v", err)
+	}
+
+	f, _ := s.GetFeature("dev-done-feature")
+	if f.Status != "dev_complete" {
+		t.Errorf("Status = %q, want dev_complete", f.Status)
+	}
+}

@@ -17,23 +17,25 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithDescription("Create a new feature to track. Returns the generated slug ID."),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Feature title (e.g., 'Bluetooth Panel')")),
 		mcp.WithString("description", mcp.Description("What the feature is")),
-		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked")),
+		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked, dev_complete")),
+		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude to read when picking up this feature")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
-		mcp.WithDescription("Update a feature's status, description, left_off note, worktree_path, or key_files."),
+		mcp.WithDescription("Update a feature's status, description, left_off note, notes, worktree_path, or key_files."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
-		mcp.WithString("status", mcp.Description("New status: planned, in_progress, done, blocked")),
+		mcp.WithString("status", mcp.Description("New status: planned, in_progress, done, blocked, dev_complete")),
 		mcp.WithString("title", mcp.Description("New title")),
 		mcp.WithString("description", mcp.Description("New description")),
 		mcp.WithString("left_off", mcp.Description("Where work stopped — free text")),
+		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude")),
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
 		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
 	), updateFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
 		mcp.WithDescription("List all features. Returns compact summaries: ID, title, status, left_off snippet. Filter by status optionally."),
-		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked. Omit for all.")),
+		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked, dev_complete. Omit for all.")),
 	), listFeaturesHandler(s))
 
 	srv.AddTool(mcp.NewTool("get_feature",
@@ -102,6 +104,7 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		title := args["title"].(string)
 		desc, _ := args["description"].(string)
 		status, _ := args["status"].(string)
+		notes, _ := args["notes"].(string)
 
 		f, err := s.AddFeature(title, desc)
 		if err != nil {
@@ -110,8 +113,11 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 
 		if status != "" && status != "planned" {
 			s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
-			f, _ = s.GetFeature(f.ID)
 		}
+		if notes != "" {
+			s.UpdateFeature(f.ID, store.FeatureUpdate{Notes: &notes})
+		}
+		f, _ = s.GetFeature(f.ID)
 
 		data, _ := json.MarshalIndent(f, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
@@ -135,6 +141,9 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if v, ok := args["left_off"].(string); ok {
 			u.LeftOff = &v
+		}
+		if v, ok := args["notes"].(string); ok {
+			u.Notes = &v
 		}
 		if v, ok := args["worktree_path"].(string); ok {
 			u.WorktreePath = &v
@@ -268,6 +277,9 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if len(f.KeyFiles) > 0 {
 			fmt.Fprintf(&b, "Key files: %s\n", strings.Join(f.KeyFiles, ", "))
+		}
+		if f.Notes != "" {
+			fmt.Fprintf(&b, "User notes: %s\n", f.Notes)
 		}
 
 		done, total, _ := s.GetFeatureProgress(id)
