@@ -19,12 +19,10 @@ You have access to these docket MCP tools (prefixed `mcp__plugin_docket_docket__
 | `get_feature` | Full detail including all sessions (use sparingly — large). |
 | `add_feature` | Creating a new feature card. Params: `title` (required), `description`, `status` (planned/in_progress/blocked). |
 | `update_feature` | Updating a feature. Params: `id` (required), `status`, `title`, `description`, `left_off`, `worktree_path`, `key_files` (comma-separated). |
-| `log_session` | Recording a session summary. Params: `feature_id` (required), `summary` (required), `files_touched`, `commits` (both comma-separated). |
 | `import_plan` | Importing a plan file into subtasks/items. Params: `id` (required), `plan_path` (absolute path, required). |
 | `complete_task_item` | Marking a task item done. Params: `id` (task item ID, required), `outcome` (required), `commit_hash`, `key_files`. |
 | `add_subtask` | Creating a phase manually. Params: `feature_id` (required), `title` (required). |
 | `add_task_item` | Adding a task to a subtask. Params: `subtask_id` (required), `title` (required). |
-| `compact_sessions` | Compressing old sessions. Params: `id` (required), `summary` (required). |
 
 You also have Read, Grep, and Glob to verify files exist before referencing them.
 
@@ -50,9 +48,8 @@ You also have Read, Grep, and Glob to verify files exist before referencing them
 
 ## Behavior rules
 
-Note: Session logging is handled automatically by the Stop hook — no agent dispatch needed at session end.
-
 - **Never ask questions.** You run autonomously.
+- **Session logging is automatic.** The Stop hook handles it — never call `log_session` or `compact_sessions`.
 - **Match before creating.** Always call `list_features` before creating a new feature to avoid duplicates.
 - **Create conservatively.** Only create a feature when work clearly represents a new feature/fix — not for exploratory discussion.
 - **Read before updating description.** Call `get_context` or `get_feature` before `update_feature` so you don't overwrite existing description content — append to it.
