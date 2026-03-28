@@ -6,213 +6,554 @@
 <title>docket — Feature Tracker</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1b26; color: #a9b1d6; }
-  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid #292e42; }
-  header h1 { font-size: 18px; color: #c0caf5; }
-  .unlinked-badge { background: #f7768e; color: #1a1b26; padding: 4px 12px; border-radius: 12px; font-size: 13px; cursor: pointer; display: none; }
+  :root {
+    --bg: #141418; --card-bg: #1C1C22; --elevated: #26262E; --border: #333340;
+    --text: #E8E8F0; --muted: #9898A8; --secondary: #C8C8E0;
+    --primary: #FF6B9D; --teal: #4ECDC4; --yellow: #FFE66D;
+    --blocked: #FF4444; --done: #4ECDC4;
+    --overlay-bg: #0A0A0E80;
+    --input-bg: #141418;
+  }
+  html.light {
+    --bg: #F5F5F7; --card-bg: #FFFFFF; --elevated: #F0F0F2; --border: #D1D5DB;
+    --text: #1A1A2E; --muted: #6B7280; --secondary: #374151;
+    --primary: #FF6B9D; --teal: #4ECDC4; --yellow: #FFE66D;
+    --blocked: #FF4444; --done: #4ECDC4;
+    --overlay-bg: rgba(0,0,0,0.3);
+    --input-bg: #F0F0F2;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 20px; color: var(--primary); font-weight: 700; letter-spacing: 1px; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+  .theme-toggle {
+    background: var(--card-bg); border: 1px solid var(--border); color: var(--muted);
+    width: 32px; height: 32px; border-radius: 6px; cursor: pointer; font-size: 16px;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.15s;
+  }
+  .theme-toggle:hover { border-color: var(--primary); }
+  .theme-toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .unlinked-badge {
+    background: var(--blocked); color: #fff; padding: 4px 12px; border-radius: 12px;
+    font-size: 13px; cursor: pointer; display: none;
+  }
   .unlinked-badge.visible { display: inline-block; }
-  .board { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 24px; min-height: calc(100vh - 60px); }
-  .column { background: #16161e; border-radius: 8px; padding: 12px; }
-  .column-header { font-size: 14px; font-weight: 600; color: #565f89; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #292e42; }
-  .column-header .count { color: #565f89; font-weight: 400; }
-  .card { background: #1a1b26; border: 1px solid #292e42; border-radius: 6px; padding: 12px; margin-bottom: 8px; cursor: pointer; transition: border-color 0.15s; }
-  .card:hover { border-color: #7aa2f7; }
-  .card-title { font-size: 14px; color: #c0caf5; font-weight: 500; margin-bottom: 4px; }
-  .card-id { font-size: 12px; color: #565f89; margin-bottom: 6px; }
-  .card-leftoff { font-size: 12px; color: #787c99; line-height: 1.4; }
-  .status-select { font-size: 11px; padding: 2px 6px; border-radius: 4px; border: 1px solid #292e42; background: #16161e; color: #a9b1d6; margin-top: 8px; cursor: pointer; }
-  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; }
-  .overlay.visible { display: flex; justify-content: center; align-items: flex-start; padding-top: 60px; }
-  .detail { background: #1a1b26; border: 1px solid #292e42; border-radius: 8px; width: 640px; max-height: 80vh; overflow-y: auto; padding: 24px; }
-  .detail h2 { color: #c0caf5; font-size: 18px; margin-bottom: 4px; }
-  .detail .slug { color: #565f89; font-size: 13px; margin-bottom: 16px; }
-  .detail label { display: block; font-size: 12px; color: #565f89; margin-top: 12px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .detail .value { font-size: 14px; color: #a9b1d6; line-height: 1.5; }
-  .detail textarea { width: 100%; background: #16161e; border: 1px solid #292e42; color: #a9b1d6; padding: 8px; border-radius: 4px; font-size: 13px; resize: vertical; min-height: 60px; }
-  .detail .save-btn { background: #7aa2f7; color: #1a1b26; border: none; padding: 6px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 8px; }
-  .session-item { border-top: 1px solid #292e42; padding: 10px 0; }
-  .session-date { font-size: 12px; color: #565f89; }
-  .session-summary { font-size: 13px; color: #a9b1d6; margin-top: 2px; }
-  .session-files { font-size: 11px; color: #787c99; margin-top: 4px; }
-  .file-tag { display: inline-block; background: #292e42; padding: 2px 8px; border-radius: 3px; font-size: 11px; color: #7aa2f7; margin: 2px 2px 2px 0; font-family: monospace; }
-  .card-progress { margin-top: 6px; }
-  .progress-bar { height: 4px; background: #292e42; border-radius: 2px; overflow: hidden; margin-top: 4px; }
-  .progress-fill { height: 100%; background: #7aa2f7; border-radius: 2px; transition: width 0.3s; }
-  .progress-text { font-size: 11px; color: #565f89; }
-  .card-next { font-size: 11px; color: #787c99; margin-top: 4px; }
-  .subtask-group { margin-top: 8px; }
-  .subtask-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 6px 0; }
-  .subtask-title { font-size: 13px; color: #c0caf5; font-weight: 500; }
-  .subtask-progress { font-size: 12px; color: #565f89; }
-  .subtask-items { padding-left: 8px; }
+
+  /* Board */
+  .board {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    padding: 20px 24px;
+    min-height: calc(100vh - 60px);
+    align-content: start;
+  }
+
+  /* Columns */
+  .column {
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .column-header {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .column-header .dot {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  }
+  .column-header .count { color: var(--muted); font-weight: 400; }
+  .col-planned .column-header { color: var(--muted); }
+  .col-planned .dot { background: var(--muted); }
+  .col-in-progress .column-header { color: var(--primary); }
+  .col-in-progress .dot { background: var(--primary); }
+  .col-blocked .column-header { color: var(--blocked); }
+  .col-blocked .dot { background: var(--blocked); }
+  .col-dev-complete .column-header { color: var(--yellow); }
+  .col-dev-complete .dot { background: var(--yellow); }
+  .col-done .column-header { color: var(--teal); }
+  .col-done .dot { background: var(--teal); }
+
+  /* Cards */
+  .card {
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .card:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 12px #FF6B9D20;
+  }
+  .card:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+  }
+  .card-title {
+    font-size: 15px;
+    color: var(--text);
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+
+  /* Per-task progress rows */
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .task-name {
+    flex: 1;
+    font-size: 13px;
+    color: var(--secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-count {
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    min-width: 28px;
+    text-align: right;
+  }
+  .progress-bar {
+    width: 56px;
+    height: 5px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.3s;
+  }
+  .col-done .progress-fill { background: var(--teal); }
+  .col-dev-complete .progress-fill { background: var(--yellow); }
+
+  /* Left-off snippet on card */
+  .card-leftoff {
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.4;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Done cards dimmed */
+  .col-done .card { opacity: 0.65; }
+  .col-done .card:hover { opacity: 1; }
+
+  /* Empty column hint */
+  .empty-hint {
+    font-size: 12px;
+    color: #6A6A8A;
+    font-style: italic;
+    padding: 8px 0;
+  }
+
+  /* Slide-out panel */
+  .panel-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: var(--overlay-bg);
+    z-index: 100;
+  }
+  .panel-overlay.visible { display: flex; justify-content: flex-end; }
+  .panel {
+    width: 60%;
+    min-width: 480px;
+    max-width: 800px;
+    height: 100vh;
+    background: var(--card-bg);
+    border-left: 2px solid var(--primary);
+    overflow-y: auto;
+    padding: 28px;
+    animation: slideIn 0.2s ease-out;
+  }
+  @keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  /* Panel content */
+  .panel-title { font-size: 22px; color: var(--text); font-weight: 700; }
+  .panel-slug {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-badge {
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-planned { background: #9898A820; color: var(--muted); }
+  .badge-in_progress, .badge-in-progress { background: #FF6B9D20; color: var(--primary); }
+  .badge-blocked { background: #FF444420; color: var(--blocked); }
+  .badge-dev_complete, .badge-dev-complete { background: #FFE66D20; color: var(--yellow); }
+  .badge-done { background: #4ECDC420; color: var(--teal); }
+
+  .panel-description {
+    font-size: 14px;
+    color: var(--secondary);
+    margin-top: 12px;
+    line-height: 1.5;
+  }
+
+  /* Section labels */
+  .panel-section-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+
+  /* Left Off callout */
+  .leftoff-callout {
+    background: var(--input-bg);
+    border-left: 3px solid var(--teal);
+    border-radius: 4px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .leftoff-callout:empty { display: none; }
+
+  /* Notes textarea */
+  .notes-textarea {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 70px;
+    line-height: 1.5;
+  }
+  .notes-textarea:focus { outline: none; border-color: var(--teal); }
+  .notes-textarea:focus-visible { outline: none; border-color: var(--teal); }
+  .notes-textarea::placeholder { color: #6A6A8A; }
+  .save-btn {
+    background: var(--primary);
+    color: #1A1A2E;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    margin-top: 8px;
+    transition: background 0.15s;
+  }
+  .save-btn:hover { background: #FF9DC0; }
+  .save-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+
+  /* Tasks in panel */
+  .subtask-group {
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .subtask-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: var(--elevated);
+    transition: background 0.1s;
+  }
+  .subtask-header:hover { background: var(--border); }
+  .subtask-header:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+  .subtask-title { font-size: 14px; color: var(--text); font-weight: 500; }
+  .subtask-progress { font-size: 13px; color: var(--muted); }
+  .subtask-items { padding: 8px 14px 12px; background: var(--input-bg); }
   .subtask-archived { opacity: 0.5; }
-  .task-item { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; font-size: 13px; }
-  .task-item.checked { color: #565f89; }
-  .task-item.unchecked { color: #a9b1d6; }
-  .task-checkbox { flex-shrink: 0; }
-  .task-outcome { font-size: 11px; color: #787c99; margin-left: 22px; }
-  .task-commit { font-size: 11px; color: #7aa2f7; font-family: monospace; margin-left: 22px; }
+  .task-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 5px 0;
+    font-size: 14px;
+  }
+  .task-item.checked { color: var(--muted); }
+  .task-item.unchecked { color: var(--text); }
+  .task-checkbox { flex-shrink: 0; font-size: 15px; }
+  .task-outcome { font-size: 12px; color: var(--muted); margin-left: 24px; margin-top: 2px; }
+  .task-commit { font-size: 12px; color: var(--teal); font-family: monospace; margin-left: 24px; }
+
+  /* Key Files */
+  .file-tag {
+    display: inline-block;
+    background: var(--elevated);
+    padding: 3px 10px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--teal);
+    margin: 3px 3px 3px 0;
+    font-family: monospace;
+  }
+
+  /* Activity section */
+  .activity-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-top: 24px;
+    margin-bottom: 8px;
+  }
+  .activity-toggle:hover { color: var(--secondary); }
+  .activity-toggle:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .session-item {
+    border-top: 1px solid var(--border);
+    padding: 10px 0;
+  }
+  .session-date { font-size: 12px; color: var(--muted); }
+  .session-summary { font-size: 13px; color: var(--secondary); margin-top: 3px; line-height: 1.4; }
+  .session-files { margin-top: 4px; }
 </style>
 </head>
 <body>
 <header>
   <h1>docket</h1>
-  <span class="unlinked-badge" id="unlinkedBadge" onclick="showUnlinked()">0 unlinked sessions</span>
+  <div class="header-right">
+    <span class="unlinked-badge" id="unlinkedBadge" onclick="showUnlinked()">0 unlinked sessions</span>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle dark/light mode"></button>
+  </div>
 </header>
 <div class="board" id="board"></div>
-<div class="overlay" id="overlay" onclick="if(event.target===this)closeDetail()">
-  <div class="detail" id="detail"></div>
+<div class="panel-overlay" id="panelOverlay" onclick="if(event.target===this)closePanel()">
+  <div class="panel" id="panel"></div>
 </div>
 <script>
-const API = '';
-const STATUSES = ['planned', 'in_progress', 'blocked', 'done'];
-const STATUS_LABELS = { planned: 'Planned', in_progress: 'In Progress', blocked: 'Blocked', done: 'Done' };
-let features = [];
+function initTheme() {
+  var saved = localStorage.getItem('docket-theme');
+  var isLight = saved === 'light';
+  if (isLight) document.documentElement.classList.add('light');
+  document.getElementById('themeToggle').textContent = isLight ? '\u2600' : '\u263E';
+}
+function toggleTheme() {
+  var isLight = document.documentElement.classList.toggle('light');
+  localStorage.setItem('docket-theme', isLight ? 'light' : 'dark');
+  document.getElementById('themeToggle').textContent = isLight ? '\u2600' : '\u263E';
+}
+initTheme();
+
+var API = '';
+var STATUSES = ['planned', 'in_progress', 'blocked', 'dev_complete', 'done'];
+var STATUS_LABELS = { planned: 'Planned', in_progress: 'In Progress', blocked: 'Blocked', dev_complete: 'Dev Complete', done: 'Done' };
+var STATUS_CSS = { planned: 'col-planned', in_progress: 'col-in-progress', blocked: 'col-blocked', dev_complete: 'col-dev-complete', done: 'col-done' };
+var features = [];
+var currentPanelId = null;
 
 async function load() {
-  const res = await fetch(API + '/api/features');
-  features = await res.json();
+  try {
+    var res = await fetch(API + '/api/features');
+    features = await res.json();
+  } catch(e) { features = []; }
   render();
   loadUnlinked();
 }
 
 function render() {
-  const board = document.getElementById('board');
+  var board = document.getElementById('board');
   board.innerHTML = '';
-  for (const status of STATUSES) {
-    const col = document.createElement('div');
-    col.className = 'column';
-    const items = features.filter(f => f.status === status);
-    col.innerHTML = '<div class="column-header">' + esc(STATUS_LABELS[status]) + ' <span class="count">(' + items.length + ')</span></div>';
-    for (const f of items) {
-      const card = document.createElement('div');
+  for (var si = 0; si < STATUSES.length; si++) {
+    var status = STATUSES[si];
+    var col = document.createElement('div');
+    col.className = 'column ' + STATUS_CSS[status];
+    var items = features.filter(function(f) { return f.status === status; });
+
+    var hdr = document.createElement('div');
+    hdr.className = 'column-header';
+    hdr.innerHTML = '<span class="dot"></span> ' + esc(STATUS_LABELS[status]) + ' <span class="count">(' + items.length + ')</span>';
+    col.appendChild(hdr);
+
+    if (items.length === 0) {
+      var hint = document.createElement('div');
+      hint.className = 'empty-hint';
+      hint.textContent = status === 'blocked' ? 'Nothing blocked' : 'No features';
+      col.appendChild(hint);
+    }
+
+    for (var i = 0; i < items.length; i++) {
+      var f = items[i];
+      var card = document.createElement('div');
       card.className = 'card';
-      card.onclick = function() { showDetail(f.id); };
-      let leftoff = f.left_off || '';
-      if (leftoff.length > 80) leftoff = leftoff.slice(0, 80) + '...';
-      const titleDiv = document.createElement('div');
+      card.tabIndex = 0;
+      card.setAttribute('data-id', f.id);
+      (function(fid) {
+        card.onclick = function() { showDetail(fid); };
+        card.onkeydown = function(e) { if (e.key === 'Enter') showDetail(fid); };
+      })(f.id);
+
+      var titleDiv = document.createElement('div');
       titleDiv.className = 'card-title';
       titleDiv.textContent = f.title;
       card.appendChild(titleDiv);
-      const idDiv = document.createElement('div');
-      idDiv.className = 'card-id';
-      idDiv.textContent = f.id;
-      card.appendChild(idDiv);
-      if (leftoff) {
-        const loDiv = document.createElement('div');
-        loDiv.className = 'card-leftoff';
-        loDiv.textContent = leftoff;
-        card.appendChild(loDiv);
-      }
-      // Progress bar
-      if (f.progress_total && f.progress_total > 0) {
-        var progDiv = document.createElement('div');
-        progDiv.className = 'card-progress';
-        var pText = document.createElement('span');
-        pText.className = 'progress-text';
-        pText.textContent = f.progress_done + '/' + f.progress_total;
-        progDiv.appendChild(pText);
+
+      // Per-task progress rows
+      var sp = f.subtask_progress || [];
+      for (var j = 0; j < sp.length; j++) {
+        var row = document.createElement('div');
+        row.className = 'task-row';
+        var nameSpan = document.createElement('span');
+        nameSpan.className = 'task-name';
+        nameSpan.textContent = sp[j].title;
+        row.appendChild(nameSpan);
+        var countSpan = document.createElement('span');
+        countSpan.className = 'task-count';
+        countSpan.textContent = sp[j].done + '/' + sp[j].total;
+        row.appendChild(countSpan);
         var bar = document.createElement('div');
         bar.className = 'progress-bar';
         var fill = document.createElement('div');
         fill.className = 'progress-fill';
-        fill.style.width = Math.round((f.progress_done / f.progress_total) * 100) + '%';
+        fill.style.width = sp[j].total > 0 ? Math.round((sp[j].done / sp[j].total) * 100) + '%' : '0%';
         bar.appendChild(fill);
-        progDiv.appendChild(bar);
-        card.appendChild(progDiv);
+        row.appendChild(bar);
+        card.appendChild(row);
       }
-      if (f.next_task) {
-        var nextDiv = document.createElement('div');
-        nextDiv.className = 'card-next';
-        nextDiv.textContent = 'Next: ' + f.next_task;
-        card.appendChild(nextDiv);
+
+      // Left-off snippet
+      var leftoff = f.left_off || '';
+      if (leftoff.length > 80) leftoff = leftoff.slice(0, 80) + '...';
+      if (leftoff) {
+        var loDiv = document.createElement('div');
+        loDiv.className = 'card-leftoff';
+        loDiv.textContent = leftoff;
+        card.appendChild(loDiv);
       }
-      const sel = document.createElement('select');
-      sel.className = 'status-select';
-      sel.onclick = function(e) { e.stopPropagation(); };
-      sel.onchange = function() { updateStatus(f.id, this.value); };
-      for (const s of STATUSES) {
-        const opt = document.createElement('option');
-        opt.value = s;
-        opt.textContent = STATUS_LABELS[s];
-        if (s === f.status) opt.selected = true;
-        sel.appendChild(opt);
-      }
-      card.appendChild(sel);
+
       col.appendChild(card);
     }
     board.appendChild(col);
   }
 }
 
-async function updateStatus(id, status) {
-  await fetch(API + '/api/features/' + id, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: status }),
-  });
-  load();
-}
-
 async function showDetail(id) {
-  const res = await fetch(API + '/api/features/' + id + '?include_archived=true');
-  const data = await res.json();
-  const f = data.feature;
-  const sessions = data.sessions || [];
-  const detail = document.getElementById('detail');
-  detail.innerHTML = '';
-
-  const h2 = document.createElement('h2');
-  h2.textContent = f.title;
-  detail.appendChild(h2);
-
-  const slugDiv = document.createElement('div');
-  slugDiv.className = 'slug';
-  slugDiv.textContent = f.id + ' \u00b7 ' + STATUS_LABELS[f.status];
-  detail.appendChild(slugDiv);
-
-  if (f.description) {
-    const lbl = document.createElement('label');
-    lbl.textContent = 'Description';
-    detail.appendChild(lbl);
-    const val = document.createElement('div');
-    val.className = 'value';
-    val.textContent = f.description;
-    detail.appendChild(val);
-  }
-
-  if (f.worktree_path) {
-    const lbl = document.createElement('label');
-    lbl.textContent = 'Worktree';
-    detail.appendChild(lbl);
-    const val = document.createElement('div');
-    val.className = 'value';
-    const code = document.createElement('code');
-    code.textContent = f.worktree_path;
-    val.appendChild(code);
-    detail.appendChild(val);
-  }
-
-  if (f.key_files && f.key_files.length) {
-    const lbl = document.createElement('label');
-    lbl.textContent = 'Key Files';
-    detail.appendChild(lbl);
-    const wrap = document.createElement('div');
-    for (const p of f.key_files) {
-      const tag = document.createElement('span');
-      tag.className = 'file-tag';
-      tag.textContent = p;
-      wrap.appendChild(tag);
-    }
-    detail.appendChild(wrap);
-  }
-
-  // Subtasks
+  currentPanelId = id;
+  try {
+    var res = await fetch(API + '/api/features/' + id + '?include_archived=true');
+    var data = await res.json();
+  } catch(e) { return; }
+  var f = data.feature;
   var subtasks = data.subtasks || [];
+  var sessions = data.sessions || [];
+  var panel = document.getElementById('panel');
+  panel.innerHTML = '';
+
+  // Title
+  var title = document.createElement('div');
+  title.className = 'panel-title';
+  title.textContent = f.title;
+  panel.appendChild(title);
+
+  // Slug + badge
+  var slugDiv = document.createElement('div');
+  slugDiv.className = 'panel-slug';
+  slugDiv.textContent = f.id + ' ';
+  var badge = document.createElement('span');
+  badge.className = 'status-badge badge-' + f.status;
+  badge.textContent = STATUS_LABELS[f.status] || f.status;
+  slugDiv.appendChild(badge);
+  panel.appendChild(slugDiv);
+
+  // Description
+  if (f.description) {
+    var desc = document.createElement('div');
+    desc.className = 'panel-description';
+    desc.textContent = f.description;
+    panel.appendChild(desc);
+  }
+
+  // Left Off
+  if (f.left_off) {
+    var loLabel = document.createElement('div');
+    loLabel.className = 'panel-section-label';
+    loLabel.textContent = 'Left Off';
+    panel.appendChild(loLabel);
+    var loCallout = document.createElement('div');
+    loCallout.className = 'leftoff-callout';
+    loCallout.textContent = f.left_off;
+    panel.appendChild(loCallout);
+  }
+
+  // Your Notes
+  var notesLabel = document.createElement('div');
+  notesLabel.className = 'panel-section-label';
+  notesLabel.textContent = 'Your Notes';
+  panel.appendChild(notesLabel);
+  var ta = document.createElement('textarea');
+  ta.className = 'notes-textarea';
+  ta.id = 'notesInput';
+  ta.placeholder = 'Add notes, thoughts, or ideas for Claude...';
+  ta.value = f.notes || '';
+  panel.appendChild(ta);
+  var saveBtn = document.createElement('button');
+  saveBtn.className = 'save-btn';
+  saveBtn.textContent = 'Save';
+  (function(fid) {
+    saveBtn.onclick = function() { saveNotes(fid); };
+  })(f.id);
+  panel.appendChild(saveBtn);
+
+  // Tasks
   if (subtasks.length > 0) {
-    var stLabel = document.createElement('label');
-    stLabel.textContent = 'Tasks';
-    detail.appendChild(stLabel);
+    var tasksLabel = document.createElement('div');
+    tasksLabel.className = 'panel-section-label';
+    tasksLabel.textContent = 'Tasks';
+    panel.appendChild(tasksLabel);
 
     for (var si = 0; si < subtasks.length; si++) {
       var st = subtasks[si];
@@ -221,32 +562,33 @@ async function showDetail(id) {
 
       var header = document.createElement('div');
       header.className = 'subtask-header';
+      header.tabIndex = 0;
       var titleSpan = document.createElement('span');
       titleSpan.className = 'subtask-title';
-      var items = st.items || [];
+      var stItems = st.items || [];
       var stDone = 0;
-      for (var ii = 0; ii < items.length; ii++) { if (items[ii].checked) stDone++; }
-      titleSpan.textContent = (st.archived ? '\u25b8' : '\u25be') + ' ' + st.title + (st.archived ? ' (archived)' : '');
+      for (var ii = 0; ii < stItems.length; ii++) { if (stItems[ii].checked) stDone++; }
+      // Archived collapsed by default, active expanded
+      var startCollapsed = st.archived;
+      titleSpan.textContent = (startCollapsed ? '\u25B8' : '\u25BE') + ' ' + st.title + (st.archived ? ' (archived)' : '');
       header.appendChild(titleSpan);
       var progSpan = document.createElement('span');
       progSpan.className = 'subtask-progress';
-      progSpan.textContent = stDone + '/' + items.length + (stDone === items.length && items.length > 0 ? ' \u2713' : '');
+      progSpan.textContent = stDone + '/' + stItems.length + (stDone === stItems.length && stItems.length > 0 ? ' \u2713' : '');
       header.appendChild(progSpan);
       group.appendChild(header);
 
       var itemsDiv = document.createElement('div');
       itemsDiv.className = 'subtask-items';
-      if (st.archived) itemsDiv.style.display = 'none';
+      if (startCollapsed) itemsDiv.style.display = 'none';
 
       (function(itemsDiv, titleSpan, st) {
-        header.onclick = function() {
-          itemsDiv.style.display = itemsDiv.style.display === 'none' ? 'block' : 'none';
-          titleSpan.textContent = (itemsDiv.style.display === 'none' ? '\u25b8' : '\u25be') + ' ' + st.title + (st.archived ? ' (archived)' : '');
-        };
+        header.onclick = function() { toggleSubtask(itemsDiv, titleSpan, st); };
+        header.onkeydown = function(e) { if (e.key === 'Enter') toggleSubtask(itemsDiv, titleSpan, st); };
       })(itemsDiv, titleSpan, st);
 
-      for (var ti = 0; ti < items.length; ti++) {
-        var item = items[ti];
+      for (var ti = 0; ti < stItems.length; ti++) {
+        var item = stItems[ti];
         var taskDiv = document.createElement('div');
         taskDiv.className = 'task-item ' + (item.checked ? 'checked' : 'unchecked');
         var cb = document.createElement('span');
@@ -273,86 +615,119 @@ async function showDetail(id) {
       }
 
       group.appendChild(itemsDiv);
-      detail.appendChild(group);
+      panel.appendChild(group);
     }
   }
 
-  const loLabel = document.createElement('label');
-  loLabel.textContent = 'Left Off';
-  detail.appendChild(loLabel);
-  const ta = document.createElement('textarea');
-  ta.id = 'leftOffInput';
-  ta.value = f.left_off || '';
-  detail.appendChild(ta);
-  const btn = document.createElement('button');
-  btn.className = 'save-btn';
-  btn.textContent = 'Save';
-  btn.onclick = function() { saveLeftOff(f.id); };
-  detail.appendChild(btn);
+  // Key Files
+  if (f.key_files && f.key_files.length) {
+    var kfLabel = document.createElement('div');
+    kfLabel.className = 'panel-section-label';
+    kfLabel.textContent = 'Key Files';
+    panel.appendChild(kfLabel);
+    var kfWrap = document.createElement('div');
+    for (var ki = 0; ki < f.key_files.length; ki++) {
+      var tag = document.createElement('span');
+      tag.className = 'file-tag';
+      tag.textContent = f.key_files[ki];
+      kfWrap.appendChild(tag);
+    }
+    panel.appendChild(kfWrap);
+  }
 
-  const sessLabel = document.createElement('label');
-  sessLabel.textContent = 'Sessions (' + sessions.length + ')';
-  detail.appendChild(sessLabel);
+  // Activity
+  var actToggle = document.createElement('div');
+  actToggle.className = 'activity-toggle';
+  actToggle.tabIndex = 0;
+  var actArrow = document.createElement('span');
+  actArrow.textContent = '\u25B8';
+  actToggle.appendChild(actArrow);
+  actToggle.appendChild(document.createTextNode(' Activity (' + sessions.length + ' session' + (sessions.length !== 1 ? 's' : '') + ')'));
+  panel.appendChild(actToggle);
 
-  if (sessions.length === 0) {
-    const noSess = document.createElement('div');
-    noSess.className = 'value';
-    noSess.textContent = 'No sessions logged yet.';
-    detail.appendChild(noSess);
-  } else {
-    for (const s of sessions) {
-      const item = document.createElement('div');
-      item.className = 'session-item';
-      const dateDiv = document.createElement('div');
-      dateDiv.className = 'session-date';
-      dateDiv.textContent = new Date(s.created_at).toLocaleDateString();
-      item.appendChild(dateDiv);
-      const sumDiv = document.createElement('div');
-      sumDiv.className = 'session-summary';
-      sumDiv.textContent = s.summary;
-      item.appendChild(sumDiv);
-      if (s.files_touched && s.files_touched.length) {
-        const filesDiv = document.createElement('div');
-        filesDiv.className = 'session-files';
-        for (const ff of s.files_touched) {
-          const tag = document.createElement('span');
-          tag.className = 'file-tag';
-          tag.textContent = ff;
-          filesDiv.appendChild(tag);
-        }
-        item.appendChild(filesDiv);
+  var actSection = document.createElement('div');
+  actSection.style.display = 'none';
+  for (var ai = 0; ai < sessions.length; ai++) {
+    var sess = sessions[ai];
+    var sessDiv = document.createElement('div');
+    sessDiv.className = 'session-item';
+    var dateDiv = document.createElement('div');
+    dateDiv.className = 'session-date';
+    dateDiv.textContent = new Date(sess.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    sessDiv.appendChild(dateDiv);
+    var sumDiv = document.createElement('div');
+    sumDiv.className = 'session-summary';
+    sumDiv.textContent = sess.summary;
+    sessDiv.appendChild(sumDiv);
+    if (sess.files_touched && sess.files_touched.length) {
+      var filesDiv = document.createElement('div');
+      filesDiv.className = 'session-files';
+      for (var fi = 0; fi < sess.files_touched.length; fi++) {
+        var fTag = document.createElement('span');
+        fTag.className = 'file-tag';
+        fTag.textContent = sess.files_touched[fi];
+        filesDiv.appendChild(fTag);
       }
-      detail.appendChild(item);
+      sessDiv.appendChild(filesDiv);
     }
+    actSection.appendChild(sessDiv);
   }
+  panel.appendChild(actSection);
 
-  document.getElementById('overlay').classList.add('visible');
+  actToggle.onclick = function() { toggleActivity(actSection, actArrow); };
+  actToggle.onkeydown = function(e) { if (e.key === 'Enter') toggleActivity(actSection, actArrow); };
+
+  document.getElementById('panelOverlay').classList.add('visible');
 }
 
-async function saveLeftOff(id) {
-  const val = document.getElementById('leftOffInput').value;
+function toggleSubtask(itemsDiv, titleSpan, st) {
+  var text = titleSpan.textContent;
+  if (itemsDiv.style.display === 'none') {
+    itemsDiv.style.display = 'block';
+    titleSpan.textContent = text.replace('\u25B8', '\u25BE');
+  } else {
+    itemsDiv.style.display = 'none';
+    titleSpan.textContent = text.replace('\u25BE', '\u25B8');
+  }
+}
+
+function toggleActivity(section, arrow) {
+  if (section.style.display === 'none') {
+    section.style.display = 'block';
+    arrow.textContent = '\u25BE';
+  } else {
+    section.style.display = 'none';
+    arrow.textContent = '\u25B8';
+  }
+}
+
+async function saveNotes(id) {
+  var val = document.getElementById('notesInput').value;
   await fetch(API + '/api/features/' + id, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ left_off: val }),
+    body: JSON.stringify({ notes: val }),
   });
   load();
 }
 
-function closeDetail() {
-  document.getElementById('overlay').classList.remove('visible');
+function closePanel() {
+  document.getElementById('panelOverlay').classList.remove('visible');
+  currentPanelId = null;
 }
 
 async function loadUnlinked() {
-  const res = await fetch(API + '/api/sessions?unlinked=true');
-  const sessions = await res.json();
-  const badge = document.getElementById('unlinkedBadge');
-  if (sessions.length > 0) {
-    badge.textContent = sessions.length + ' unlinked session' + (sessions.length > 1 ? 's' : '');
-    badge.classList.add('visible');
-  } else {
-    badge.classList.remove('visible');
-  }
+  try {
+    var res = await fetch(API + '/api/sessions?unlinked=true');
+    var sessions = await res.json();
+    var badge = document.getElementById('unlinkedBadge');
+    if (sessions.length > 0) {
+      badge.textContent = sessions.length + ' unlinked session' + (sessions.length > 1 ? 's' : '');
+      badge.classList.add('visible');
+    } else {
+      badge.classList.remove('visible');
+    }
+  } catch(e) {}
 }
 
 function showUnlinked() {
@@ -360,13 +735,18 @@ function showUnlinked() {
 }
 
 function esc(s) {
-  const d = document.createElement('div');
+  var d = document.createElement('div');
   d.textContent = s;
   return d.innerHTML;
 }
 
-document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeDetail(); });
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
 load();
+setInterval(function() {
+  load();
+  // If panel is open, refresh it too
+  if (currentPanelId) showDetail(currentPanelId);
+}, 10000);
 </script>
 </body>
 </html>
