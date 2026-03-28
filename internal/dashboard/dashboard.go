@@ -4,10 +4,25 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/sniffle6/claude-docket/internal/store"
 )
+
+type subtaskProgress struct {
+	Title string `json:"title"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+}
+
+type featureWithProgress struct {
+	store.Feature
+	ProgressDone    int               `json:"progress_done"`
+	ProgressTotal   int               `json:"progress_total"`
+	NextTask        string            `json:"next_task"`
+	SubtaskProgress []subtaskProgress `json:"subtask_progress"`
+}
 
 func NewHandler(s *store.Store, static fs.FS) http.Handler {
 	mux := http.NewServeMux()
@@ -23,13 +38,6 @@ func NewHandler(s *store.Store, static fs.FS) http.Handler {
 			features = []store.Feature{}
 		}
 
-		type featureWithProgress struct {
-			store.Feature
-			ProgressDone  int    `json:"progress_done"`
-			ProgressTotal int    `json:"progress_total"`
-			NextTask      string `json:"next_task"`
-		}
-
 		var result []featureWithProgress
 		for _, f := range features {
 			fp := featureWithProgress{Feature: f}
@@ -40,14 +48,23 @@ func NewHandler(s *store.Store, static fs.FS) http.Handler {
 			if total > 0 {
 				subtasks, _ := s.GetSubtasksForFeature(f.ID, false)
 				for _, st := range subtasks {
+					stDone := 0
 					for _, item := range st.Items {
-						if !item.Checked {
+						if item.Checked {
+							stDone++
+						} else if fp.NextTask == "" {
 							fp.NextTask = item.Title
-							goto foundNext
 						}
 					}
+					fp.SubtaskProgress = append(fp.SubtaskProgress, subtaskProgress{
+						Title: st.Title,
+						Done:  stDone,
+						Total: len(st.Items),
+					})
 				}
-			foundNext:
+			}
+			if fp.SubtaskProgress == nil {
+				fp.SubtaskProgress = []subtaskProgress{}
 			}
 
 			result = append(result, fp)
@@ -128,9 +145,20 @@ func NewHandler(s *store.Store, static fs.FS) http.Handler {
 		writeJSON(w, map[string]string{"ok": "true"})
 	})
 
-	// Serve static dashboard files if provided
+	// Serve dashboard HTML — prefer local file on disk for dev, fall back to embedded
 	if static != nil {
-		mux.Handle("GET /", http.FileServerFS(static))
+		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/" {
+				http.FileServerFS(static).ServeHTTP(w, r)
+				return
+			}
+			if devHTML, err := os.ReadFile("dashboard/index.html"); err == nil {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Write(devHTML)
+				return
+			}
+			http.FileServerFS(static).ServeHTTP(w, r)
+		})
 	}
 
 	return mux

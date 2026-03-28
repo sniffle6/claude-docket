@@ -94,6 +94,95 @@ func TestGetUnlinkedSessionsAPI(t *testing.T) {
 	}
 }
 
+func strPtr(s string) *string { return &s }
+
+func TestPatchFeatureNotesAPI(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Notes Feature", "")
+
+	handler := NewHandler(s, nil)
+	body := `{"notes":"my thoughts on this feature"}`
+	req := httptest.NewRequest("PATCH", "/api/features/notes-feature", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	f, _ := s.GetFeature("notes-feature")
+	if f.Notes != "my thoughts on this feature" {
+		t.Errorf("Notes = %q, want %q", f.Notes, "my thoughts on this feature")
+	}
+}
+
+func TestListFeaturesIncludesNotes(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Feature With Notes", "")
+	s.UpdateFeature("feature-with-notes", store.FeatureUpdate{Notes: strPtr("important")})
+
+	handler := NewHandler(s, nil)
+	req := httptest.NewRequest("GET", "/api/features", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+
+	if !strings.Contains(w.Body.String(), "important") {
+		t.Errorf("response doesn't contain notes: %s", w.Body.String())
+	}
+}
+
+func TestListFeaturesIncludesSubtaskProgress(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Progress Test", "")
+	st, _ := s.AddSubtask("progress-test", "Phase 1", 1)
+	s.AddTaskItem(st.ID, "Item A", 1)
+	s.AddTaskItem(st.ID, "Item B", 2)
+	s.CompleteTaskItem(1, store.TaskItemCompletion{Outcome: "done"})
+
+	handler := NewHandler(s, nil)
+	req := httptest.NewRequest("GET", "/api/features", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+
+	body := w.Body.String()
+	if !strings.Contains(body, "subtask_progress") {
+		t.Errorf("response missing subtask_progress: %s", body)
+	}
+	if !strings.Contains(body, "Phase 1") {
+		t.Errorf("response missing subtask title: %s", body)
+	}
+}
+
+func TestDevCompleteStatusAPI(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("DC Feature", "")
+	s.UpdateFeature("dc-feature", store.FeatureUpdate{Status: strPtr("dev_complete")})
+
+	handler := NewHandler(s, nil)
+	req := httptest.NewRequest("GET", "/api/features?status=dev_complete", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+
+	var features []json.RawMessage
+	json.NewDecoder(w.Body).Decode(&features)
+	if len(features) != 1 {
+		t.Fatalf("got %d features, want 1", len(features))
+	}
+}
+
 func TestReassignSessionAPI(t *testing.T) {
 	s := testStore(t)
 	s.AddFeature("Feature A", "")
