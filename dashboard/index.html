@@ -120,8 +120,30 @@
     font-size: 15px;
     color: var(--text);
     font-weight: 600;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
   }
+  .card-id {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: monospace;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .copy-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0 2px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+  }
+  .card:hover .copy-btn, .copy-btn:focus-visible { opacity: 1; }
+  .copy-btn:hover { color: var(--primary); }
+  .copy-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
   /* Per-task progress rows */
   .task-row {
@@ -457,6 +479,19 @@ function render() {
       titleDiv.textContent = f.title;
       card.appendChild(titleDiv);
 
+      var idDiv = document.createElement('div');
+      idDiv.className = 'card-id';
+      idDiv.textContent = f.id;
+      var copyBtn = document.createElement('button');
+      copyBtn.className = 'copy-btn';
+      copyBtn.textContent = '\u2398';
+      copyBtn.title = 'Copy ID';
+      (function(fid) {
+        copyBtn.onclick = function(e) { e.stopPropagation(); copyId(fid, this); };
+      })(f.id);
+      idDiv.appendChild(copyBtn);
+      card.appendChild(idDiv);
+
       // Per-task progress rows
       var sp = f.subtask_progress || [];
       for (var j = 0; j < sp.length; j++) {
@@ -514,10 +549,19 @@ async function showDetail(id) {
   title.textContent = f.title;
   panel.appendChild(title);
 
-  // Slug + badge
+  // Slug + copy + badge
   var slugDiv = document.createElement('div');
   slugDiv.className = 'panel-slug';
   slugDiv.textContent = f.id + ' ';
+  var panelCopyBtn = document.createElement('button');
+  panelCopyBtn.className = 'copy-btn';
+  panelCopyBtn.style.opacity = '1';
+  panelCopyBtn.textContent = '\u2398';
+  panelCopyBtn.title = 'Copy ID';
+  (function(fid) {
+    panelCopyBtn.onclick = function() { copyId(fid, this); };
+  })(f.id);
+  slugDiv.appendChild(panelCopyBtn);
   var badge = document.createElement('span');
   badge.className = 'status-badge badge-' + f.status;
   badge.textContent = STATUS_LABELS[f.status] || f.status;
@@ -747,6 +791,15 @@ async function loadUnlinked() {
 
 function showUnlinked() {
   alert('Unlinked sessions panel coming soon. Use the API: GET /api/sessions?unlinked=true');
+}
+
+function copyId(id, btn) {
+  navigator.clipboard.writeText(id).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = '\u2713';
+    btn.style.opacity = '1';
+    setTimeout(function() { btn.textContent = orig; }, 1200);
+  });
 }
 
 function esc(s) {
