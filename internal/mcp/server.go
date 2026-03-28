@@ -3,11 +3,11 @@ package mcp
 import (
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/sniffyanimal/feat/internal/store"
+	"github.com/sniffle6/claude-docket/internal/store"
 )
 
 func NewServer(s *store.Store) *server.MCPServer {
-	srv := server.NewMCPServer("feat", "0.1.0",
+	srv := server.NewMCPServer("docket", "0.1.0",
 		server.WithToolCapabilities(true),
 	)
 

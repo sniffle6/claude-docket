@@ -1,24 +1,24 @@
-# feat plugin
+# docket plugin
 
-Claude Code plugin for the feat feature tracker.
+Claude Code plugin for the docket feature tracker.
 
 ## What it provides
 
-- **board-manager agent** — autonomous agent that handles all feat board operations (create features, update status, log sessions, auto-compact)
-- **/feat skill** — opens the feat dashboard (http://localhost:7890) in the default browser
-- **MCP server** — connects Claude Code to the feat binary for feature tracking tools
+- **board-manager agent** — autonomous agent that handles all docket board operations (create features, update status, log sessions, auto-compact)
+- **/docket skill** — opens the docket dashboard (http://localhost:7890) in the default browser
+- **MCP server** — connects Claude Code to the docket binary for feature tracking tools
 
 ## Setup
 
-Run `install.sh` from the feat repo root. It builds the binary and installs this plugin.
+Run `install.sh` from the docket repo root. It builds the binary and installs this plugin.
 
 ## Per-project setup
 
 Add this to your project's CLAUDE.md:
 
-    ## Feature Tracking (feat)
+    ## Feature Tracking (docket)
 
-    This project uses `feat` for feature tracking. Dashboard: http://localhost:7890 (or run `/feat`).
+    This project uses `docket` for feature tracking. Dashboard: http://localhost:7890 (or run `/docket`).
 
     Dispatch the `board-manager` agent (model: sonnet) at these points:
     1. **Start of implementation work** — skip for questions/reviews/lookups

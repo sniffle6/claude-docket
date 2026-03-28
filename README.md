@@ -1,4 +1,4 @@
-# feat
+# docket
 
 Local feature tracker for AI coding agents. MCP server + web dashboard.
 
@@ -14,8 +14,8 @@ See `INSTALL.md` for full setup instructions.
 
 ```bash
 cd your-project
-feat init          # creates .feat/ directory
-feat serve         # starts MCP server + dashboard on localhost:7890
+docket init          # creates .docket/ directory
+docket serve         # starts MCP server + dashboard on localhost:7890
 ```
 
 ## Claude Code Setup
@@ -23,9 +23,9 @@ feat serve         # starts MCP server + dashboard on localhost:7890
 Run `bash install.sh` to build and install the plugin. See `INSTALL.md` for details.
 
 The plugin provides:
-- **board-manager agent** — handles all feat board operations autonomously
-- **/feat skill** — opens the dashboard in a browser
-- **MCP server config** — connects Claude Code to the feat binary
+- **board-manager agent** — handles all docket board operations autonomously
+- **/docket skill** — opens the dashboard in a browser
+- **MCP server config** — connects Claude Code to the docket binary
 
 Add the CLAUDE.md dispatch snippet to each project (see `plugin/README.md`).
 
@@ -49,7 +49,7 @@ Add the CLAUDE.md dispatch snippet to each project (see `plugin/README.md`).
 
 ## Dashboard
 
-Open `http://localhost:7890` while `feat serve` is running (or use `/feat` skill).
+Open `http://localhost:7890` while `docket serve` is running (or use `/docket` skill).
 
 - Kanban board: Planned / In Progress / Blocked / Done
 - Click a card for full detail, session history, key files

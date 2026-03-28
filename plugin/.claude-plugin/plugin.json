@@ -1,5 +1,5 @@
 {
-  "name": "feat",
+  "name": "docket",
   "description": "Feature tracking for Claude Code sessions. MCP server + board-manager agent + dashboard.",
   "version": "0.1.0",
   "author": { "name": "sniffyanimal" },

@@ -9,7 +9,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"github.com/sniffyanimal/feat/internal/store"
+	"github.com/sniffle6/claude-docket/internal/store"
 )
 
 func registerTools(srv *server.MCPServer, s *store.Store) {
@@ -17,6 +17,7 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithDescription("Create a new feature to track. Returns the generated slug ID."),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Feature title (e.g., 'Bluetooth Panel')")),
 		mcp.WithString("description", mcp.Description("What the feature is")),
+		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
@@ -27,6 +28,7 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("description", mcp.Description("New description")),
 		mcp.WithString("left_off", mcp.Description("Where work stopped — free text")),
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
+		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
 	), updateFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
@@ -41,8 +43,10 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 
 	srv.AddTool(mcp.NewTool("log_session",
 		mcp.WithDescription("Record a session summary. Call this at end of session to log what was accomplished."),
-		mcp.WithString("feature_id", mcp.Description("Feature slug ID this session was about. Omit if unlinked.")),
+		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID this session was about.")),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Brief summary of what was accomplished")),
+		mcp.WithString("files_touched", mcp.Description("Comma-separated list of files modified this session")),
+		mcp.WithString("commits", mcp.Description("Comma-separated list of commit hashes made this session")),
 	), logSessionHandler(s))
 
 	srv.AddTool(mcp.NewTool("get_context",
@@ -59,16 +63,54 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
 		mcp.WithString("summary", mcp.Required(), mcp.Description("Summary of the compacted sessions (you write this after reading the old sessions)")),
 	), compactSessionsHandler(s))
+
+	srv.AddTool(mcp.NewTool("import_plan",
+		mcp.WithDescription("Import a plan markdown file into subtasks and task items. Archives existing active subtasks first. Returns created subtask/item IDs."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
+		mcp.WithString("plan_path", mcp.Required(), mcp.Description("Absolute path to the plan markdown file")),
+	), importPlanHandler(s))
+
+	srv.AddTool(mcp.NewTool("complete_task_item",
+		mcp.WithDescription("Mark a task item as done with outcome, commit hash, and key files."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Task item ID (number)")),
+		mcp.WithString("outcome", mcp.Required(), mcp.Description("One-liner of what was accomplished")),
+		mcp.WithString("commit_hash", mcp.Description("Git commit SHA")),
+		mcp.WithString("key_files", mcp.Description("Comma-separated file paths modified")),
+	), completeTaskItemHandler(s))
+
+	srv.AddTool(mcp.NewTool("add_subtask",
+		mcp.WithDescription("Manually add a subtask (phase) to a feature."),
+		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID")),
+		mcp.WithString("title", mcp.Required(), mcp.Description("Subtask title")),
+	), addSubtaskHandler(s))
+
+	srv.AddTool(mcp.NewTool("add_task_item",
+		mcp.WithDescription("Manually add a task item to a subtask."),
+		mcp.WithString("subtask_id", mcp.Required(), mcp.Description("Parent subtask ID (number)")),
+		mcp.WithString("title", mcp.Required(), mcp.Description("Task item title")),
+	), addTaskItemHandler(s))
+
+	srv.AddTool(mcp.NewTool("get_full_context",
+		mcp.WithDescription("Get everything for a feature: all subtasks (including archived), all task items with outcomes and commits, all sessions. For subagent deep dives."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
+	), getFullContextHandler(s))
 }
 
 func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		title := req.GetArguments()["title"].(string)
-		desc, _ := req.GetArguments()["description"].(string)
+		args := req.GetArguments()
+		title := args["title"].(string)
+		desc, _ := args["description"].(string)
+		status, _ := args["status"].(string)
 
 		f, err := s.AddFeature(title, desc)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		if status != "" && status != "planned" {
+			s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+			f, _ = s.GetFeature(f.ID)
 		}
 
 		data, _ := json.MarshalIndent(f, "", "  ")
@@ -96,6 +138,13 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if v, ok := args["worktree_path"].(string); ok {
 			u.WorktreePath = &v
+		}
+		if v, ok := args["key_files"].(string); ok && v != "" {
+			files := strings.Split(v, ",")
+			for i := range files {
+				files[i] = strings.TrimSpace(files[i])
+			}
+			u.KeyFiles = &files
 		}
 
 		if err := s.UpdateFeature(id, u); err != nil {
@@ -144,12 +193,15 @@ func getFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
+		subtasks, _ := s.GetSubtasksForFeature(id, false)
 		sessions, _ := s.GetSessionsForFeature(id)
+
 		type fullFeature struct {
 			store.Feature
+			Subtasks []store.Subtask `json:"subtasks"`
 			Sessions []store.Session `json:"sessions"`
 		}
-		full := fullFeature{Feature: *f, Sessions: sessions}
+		full := fullFeature{Feature: *f, Subtasks: subtasks, Sessions: sessions}
 		data, _ := json.MarshalIndent(full, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
 	}
@@ -159,13 +211,33 @@ func logSessionHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		summary := args["summary"].(string)
-		featureID, _ := args["feature_id"].(string)
+		featureID := args["feature_id"].(string)
+
+		if _, err := s.GetFeature(featureID); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("feature not found: %s", featureID)), nil
+		}
+
+		var filesTouched []string
+		if v, ok := args["files_touched"].(string); ok && v != "" {
+			for _, f := range strings.Split(v, ",") {
+				filesTouched = append(filesTouched, strings.TrimSpace(f))
+			}
+		}
+
+		var commits []string
+		if v, ok := args["commits"].(string); ok && v != "" {
+			for _, c := range strings.Split(v, ",") {
+				commits = append(commits, strings.TrimSpace(c))
+			}
+		}
 
 		sess, err := s.LogSession(store.SessionInput{
-			FeatureID:  featureID,
-			Summary:    summary,
-			AutoLinked: featureID != "",
-			LinkReason: "provided by Claude at session end",
+			FeatureID:    featureID,
+			Summary:      summary,
+			FilesTouched: filesTouched,
+			Commits:      commits,
+			AutoLinked:   featureID != "",
+			LinkReason:   "provided by Claude at session end",
 		})
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -197,6 +269,32 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 		if len(f.KeyFiles) > 0 {
 			fmt.Fprintf(&b, "Key files: %s\n", strings.Join(f.KeyFiles, ", "))
 		}
+
+		done, total, _ := s.GetFeatureProgress(id)
+		if total > 0 {
+			fmt.Fprintf(&b, "Progress: %d/%d\n", done, total)
+			subtasks, _ := s.GetSubtasksForFeature(id, false)
+			var nextTask string
+			for _, st := range subtasks {
+				stDone := 0
+				for _, item := range st.Items {
+					if item.Checked {
+						stDone++
+					} else if nextTask == "" {
+						nextTask = item.Title
+					}
+				}
+				status := fmt.Sprintf("%d/%d", stDone, len(st.Items))
+				if stDone == len(st.Items) {
+					status += " ✓"
+				}
+				fmt.Fprintf(&b, "  %s [%s]\n", st.Title, status)
+			}
+			if nextTask != "" {
+				fmt.Fprintf(&b, "Next: %s\n", nextTask)
+			}
+		}
+
 		if len(fc.RecentSessions) > 0 {
 			b.WriteString("Recent sessions:\n")
 			for _, sess := range fc.RecentSessions {
@@ -252,4 +350,138 @@ func compactSessionsHandler(s *store.Store) server.ToolHandlerFunc {
 
 		return mcp.NewToolResultText(fmt.Sprintf("Compacted %d sessions into 1 summary. Last 3 sessions preserved.", n)), nil
 	}
+}
+
+func importPlanHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id := args["id"].(string)
+		planPath := args["plan_path"].(string)
+
+		result, err := s.ImportPlan(id, planPath)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		var b strings.Builder
+		fmt.Fprintf(&b, "Imported %d subtasks, %d task items for %s:\n", result.SubtaskCount, result.TaskItemCount, id)
+		for _, st := range result.Subtasks {
+			if len(st.ItemIDs) > 0 {
+				fmt.Fprintf(&b, "  Subtask: %s (items #%d-#%d)\n", st.Title, st.ItemIDs[0], st.ItemIDs[len(st.ItemIDs)-1])
+			} else {
+				fmt.Fprintf(&b, "  Subtask: %s (no items)\n", st.Title)
+			}
+		}
+		return mcp.NewToolResultText(b.String()), nil
+	}
+}
+
+func completeTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id := parseInt64(args["id"].(string))
+		outcome := args["outcome"].(string)
+		commitHash, _ := args["commit_hash"].(string)
+
+		var keyFiles []string
+		if v, ok := args["key_files"].(string); ok && v != "" {
+			for _, f := range strings.Split(v, ",") {
+				keyFiles = append(keyFiles, strings.TrimSpace(f))
+			}
+		}
+
+		if err := s.CompleteTaskItem(id, store.TaskItemCompletion{
+			Outcome:    outcome,
+			CommitHash: commitHash,
+			KeyFiles:   keyFiles,
+		}); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		item, _ := s.GetTaskItem(id)
+		if item != nil {
+			st, _ := s.GetSubtask(item.SubtaskID)
+			if st != nil {
+				items, _ := s.GetTaskItemsForSubtask(st.ID)
+				done := 0
+				for _, i := range items {
+					if i.Checked {
+						done++
+					}
+				}
+				return mcp.NewToolResultText(fmt.Sprintf("Task #%d done. %s: %d/%d", id, st.Title, done, len(items))), nil
+			}
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Task #%d done.", id)), nil
+	}
+}
+
+func addSubtaskHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		featureID := args["feature_id"].(string)
+		title := args["title"].(string)
+
+		subtasks, _ := s.GetSubtasksForFeature(featureID, false)
+		position := len(subtasks) + 1
+
+		st, err := s.AddSubtask(featureID, title, position)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Subtask #%d created: %s", st.ID, st.Title)), nil
+	}
+}
+
+func addTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		subtaskID := parseInt64(args["subtask_id"].(string))
+		title := args["title"].(string)
+
+		items, _ := s.GetTaskItemsForSubtask(subtaskID)
+		position := len(items) + 1
+
+		item, err := s.AddTaskItem(subtaskID, title, position)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Task item #%d created: %s", item.ID, item.Title)), nil
+	}
+}
+
+func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		id := req.GetArguments()["id"].(string)
+
+		f, err := s.GetFeature(id)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		subtasks, _ := s.GetSubtasksForFeature(id, true)
+		sessions, _ := s.GetSessionsForFeature(id)
+
+		type fullDump struct {
+			Feature  store.Feature   `json:"feature"`
+			Subtasks []store.Subtask `json:"subtasks"`
+			Sessions []store.Session `json:"sessions"`
+		}
+
+		data, _ := json.MarshalIndent(fullDump{
+			Feature:  *f,
+			Subtasks: subtasks,
+			Sessions: sessions,
+		}, "", "  ")
+		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func parseInt64(s string) int64 {
+	var n int64
+	fmt.Sscanf(s, "%d", &n)
+	return n
 }

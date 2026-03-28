@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sniffyanimal/feat/internal/store"
+	"github.com/sniffle6/claude-docket/internal/store"
 )
 
 func testStore(t *testing.T) *store.Store {

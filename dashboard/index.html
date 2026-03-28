@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>feat — Feature Tracker</title>
+<title>docket — Feature Tracker</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1b26; color: #a9b1d6; }
@@ -35,11 +35,28 @@
   .session-summary { font-size: 13px; color: #a9b1d6; margin-top: 2px; }
   .session-files { font-size: 11px; color: #787c99; margin-top: 4px; }
   .file-tag { display: inline-block; background: #292e42; padding: 2px 8px; border-radius: 3px; font-size: 11px; color: #7aa2f7; margin: 2px 2px 2px 0; font-family: monospace; }
+  .card-progress { margin-top: 6px; }
+  .progress-bar { height: 4px; background: #292e42; border-radius: 2px; overflow: hidden; margin-top: 4px; }
+  .progress-fill { height: 100%; background: #7aa2f7; border-radius: 2px; transition: width 0.3s; }
+  .progress-text { font-size: 11px; color: #565f89; }
+  .card-next { font-size: 11px; color: #787c99; margin-top: 4px; }
+  .subtask-group { margin-top: 8px; }
+  .subtask-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 6px 0; }
+  .subtask-title { font-size: 13px; color: #c0caf5; font-weight: 500; }
+  .subtask-progress { font-size: 12px; color: #565f89; }
+  .subtask-items { padding-left: 8px; }
+  .subtask-archived { opacity: 0.5; }
+  .task-item { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; font-size: 13px; }
+  .task-item.checked { color: #565f89; }
+  .task-item.unchecked { color: #a9b1d6; }
+  .task-checkbox { flex-shrink: 0; }
+  .task-outcome { font-size: 11px; color: #787c99; margin-left: 22px; }
+  .task-commit { font-size: 11px; color: #7aa2f7; font-family: monospace; margin-left: 22px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>feat</h1>
+  <h1>docket</h1>
   <span class="unlinked-badge" id="unlinkedBadge" onclick="showUnlinked()">0 unlinked sessions</span>
 </header>
 <div class="board" id="board"></div>
@@ -87,6 +104,29 @@ function render() {
         loDiv.textContent = leftoff;
         card.appendChild(loDiv);
       }
+      // Progress bar
+      if (f.progress_total && f.progress_total > 0) {
+        var progDiv = document.createElement('div');
+        progDiv.className = 'card-progress';
+        var pText = document.createElement('span');
+        pText.className = 'progress-text';
+        pText.textContent = f.progress_done + '/' + f.progress_total;
+        progDiv.appendChild(pText);
+        var bar = document.createElement('div');
+        bar.className = 'progress-bar';
+        var fill = document.createElement('div');
+        fill.className = 'progress-fill';
+        fill.style.width = Math.round((f.progress_done / f.progress_total) * 100) + '%';
+        bar.appendChild(fill);
+        progDiv.appendChild(bar);
+        card.appendChild(progDiv);
+      }
+      if (f.next_task) {
+        var nextDiv = document.createElement('div');
+        nextDiv.className = 'card-next';
+        nextDiv.textContent = 'Next: ' + f.next_task;
+        card.appendChild(nextDiv);
+      }
       const sel = document.createElement('select');
       sel.className = 'status-select';
       sel.onclick = function(e) { e.stopPropagation(); };
@@ -115,7 +155,7 @@ async function updateStatus(id, status) {
 }
 
 async function showDetail(id) {
-  const res = await fetch(API + '/api/features/' + id);
+  const res = await fetch(API + '/api/features/' + id + '?include_archived=true');
   const data = await res.json();
   const f = data.feature;
   const sessions = data.sessions || [];
@@ -165,6 +205,76 @@ async function showDetail(id) {
       wrap.appendChild(tag);
     }
     detail.appendChild(wrap);
+  }
+
+  // Subtasks
+  var subtasks = data.subtasks || [];
+  if (subtasks.length > 0) {
+    var stLabel = document.createElement('label');
+    stLabel.textContent = 'Tasks';
+    detail.appendChild(stLabel);
+
+    for (var si = 0; si < subtasks.length; si++) {
+      var st = subtasks[si];
+      var group = document.createElement('div');
+      group.className = 'subtask-group' + (st.archived ? ' subtask-archived' : '');
+
+      var header = document.createElement('div');
+      header.className = 'subtask-header';
+      var titleSpan = document.createElement('span');
+      titleSpan.className = 'subtask-title';
+      var items = st.items || [];
+      var stDone = 0;
+      for (var ii = 0; ii < items.length; ii++) { if (items[ii].checked) stDone++; }
+      titleSpan.textContent = (st.archived ? '\u25b8' : '\u25be') + ' ' + st.title + (st.archived ? ' (archived)' : '');
+      header.appendChild(titleSpan);
+      var progSpan = document.createElement('span');
+      progSpan.className = 'subtask-progress';
+      progSpan.textContent = stDone + '/' + items.length + (stDone === items.length && items.length > 0 ? ' \u2713' : '');
+      header.appendChild(progSpan);
+      group.appendChild(header);
+
+      var itemsDiv = document.createElement('div');
+      itemsDiv.className = 'subtask-items';
+      if (st.archived) itemsDiv.style.display = 'none';
+
+      (function(itemsDiv, titleSpan, st) {
+        header.onclick = function() {
+          itemsDiv.style.display = itemsDiv.style.display === 'none' ? 'block' : 'none';
+          titleSpan.textContent = (itemsDiv.style.display === 'none' ? '\u25b8' : '\u25be') + ' ' + st.title + (st.archived ? ' (archived)' : '');
+        };
+      })(itemsDiv, titleSpan, st);
+
+      for (var ti = 0; ti < items.length; ti++) {
+        var item = items[ti];
+        var taskDiv = document.createElement('div');
+        taskDiv.className = 'task-item ' + (item.checked ? 'checked' : 'unchecked');
+        var cb = document.createElement('span');
+        cb.className = 'task-checkbox';
+        cb.textContent = item.checked ? '\u2611' : '\u2610';
+        taskDiv.appendChild(cb);
+        var titleEl = document.createElement('span');
+        titleEl.textContent = item.title;
+        taskDiv.appendChild(titleEl);
+        itemsDiv.appendChild(taskDiv);
+
+        if (item.outcome) {
+          var outcomeDiv = document.createElement('div');
+          outcomeDiv.className = 'task-outcome';
+          outcomeDiv.textContent = item.outcome;
+          itemsDiv.appendChild(outcomeDiv);
+        }
+        if (item.commit_hash) {
+          var commitDiv = document.createElement('div');
+          commitDiv.className = 'task-commit';
+          commitDiv.textContent = item.commit_hash;
+          itemsDiv.appendChild(commitDiv);
+        }
+      }
+
+      group.appendChild(itemsDiv);
+      detail.appendChild(group);
+    }
   }
 
   const loLabel = document.createElement('label');

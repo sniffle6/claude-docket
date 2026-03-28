@@ -1,4 +1,4 @@
-module github.com/sniffyanimal/feat
+module github.com/sniffle6/claude-docket
 
 go 1.26.1
 

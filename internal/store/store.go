@@ -52,9 +52,9 @@ type Store struct {
 }
 
 func Open(projectDir string) (*Store, error) {
-	featDir := filepath.Join(projectDir, ".feat")
+	featDir := filepath.Join(projectDir, ".docket")
 	if err := os.MkdirAll(featDir, 0755); err != nil {
-		return nil, fmt.Errorf("create .feat dir: %w", err)
+		return nil, fmt.Errorf("create .docket dir: %w", err)
 	}
 
 	dbPath := filepath.Join(featDir, "features.db")

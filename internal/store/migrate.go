@@ -31,11 +31,38 @@ const schemaV2 = `
 ALTER TABLE sessions ADD COLUMN compacted INTEGER NOT NULL DEFAULT 0;
 `
 
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS subtasks (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	feature_id TEXT NOT NULL REFERENCES features(id),
+	title TEXT NOT NULL,
+	position INTEGER NOT NULL DEFAULT 0,
+	archived INTEGER NOT NULL DEFAULT 0,
+	archived_at DATETIME,
+	created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS task_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	subtask_id INTEGER NOT NULL REFERENCES subtasks(id),
+	title TEXT NOT NULL,
+	checked INTEGER NOT NULL DEFAULT 0,
+	key_files TEXT NOT NULL DEFAULT '[]',
+	outcome TEXT NOT NULL DEFAULT '',
+	commit_hash TEXT NOT NULL DEFAULT '',
+	position INTEGER NOT NULL DEFAULT 0,
+	created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+	updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
 	}
 	// v2: add compacted column (ignore error if already exists)
 	db.Exec(schemaV2)
+	// v3: add subtasks and task_items tables (ignore error if already exists)
+	db.Exec(schemaV3)
 	return nil
 }

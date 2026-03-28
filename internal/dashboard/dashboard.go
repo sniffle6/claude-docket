@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/sniffyanimal/feat/internal/store"
+	"github.com/sniffle6/claude-docket/internal/store"
 )
 
 func NewHandler(s *store.Store, static fs.FS) http.Handler {
@@ -22,7 +22,40 @@ func NewHandler(s *store.Store, static fs.FS) http.Handler {
 		if features == nil {
 			features = []store.Feature{}
 		}
-		writeJSON(w, features)
+
+		type featureWithProgress struct {
+			store.Feature
+			ProgressDone  int    `json:"progress_done"`
+			ProgressTotal int    `json:"progress_total"`
+			NextTask      string `json:"next_task"`
+		}
+
+		var result []featureWithProgress
+		for _, f := range features {
+			fp := featureWithProgress{Feature: f}
+			done, total, _ := s.GetFeatureProgress(f.ID)
+			fp.ProgressDone = done
+			fp.ProgressTotal = total
+
+			if total > 0 {
+				subtasks, _ := s.GetSubtasksForFeature(f.ID, false)
+				for _, st := range subtasks {
+					for _, item := range st.Items {
+						if !item.Checked {
+							fp.NextTask = item.Title
+							goto foundNext
+						}
+					}
+				}
+			foundNext:
+			}
+
+			result = append(result, fp)
+		}
+		if result == nil {
+			result = []featureWithProgress{}
+		}
+		writeJSON(w, result)
 	})
 
 	mux.HandleFunc("GET /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -32,11 +65,16 @@ func NewHandler(s *store.Store, static fs.FS) http.Handler {
 			http.Error(w, err.Error(), 404)
 			return
 		}
+		includeArchived := r.URL.Query().Get("include_archived") == "true"
+		subtasks, _ := s.GetSubtasksForFeature(id, includeArchived)
 		sessions, _ := s.GetSessionsForFeature(id)
 		if sessions == nil {
 			sessions = []store.Session{}
 		}
-		writeJSON(w, map[string]any{"feature": f, "sessions": sessions})
+		if subtasks == nil {
+			subtasks = []store.Subtask{}
+		}
+		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions})
 	})
 
 	mux.HandleFunc("PATCH /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
