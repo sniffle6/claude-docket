@@ -24,7 +24,7 @@ Initialize docket in the current project. Creates the database directory and add
 
    ## Feature Tracking (docket)
 
-   This project uses `docket` for feature tracking. Dashboard: http://localhost:7890 (or run `/docket`).
+   This project uses `docket` for feature tracking. Run `/docket` to open the dashboard.
 
    Dispatch the `board-manager` agent (model: sonnet) at these points:
    1. **Start of implementation work** — skip for questions/reviews/lookups

@@ -15,7 +15,7 @@ See `INSTALL.md` for full setup instructions.
 ```bash
 cd your-project
 docket init          # creates .docket/ directory
-docket serve         # starts MCP server + dashboard on localhost:7890
+docket serve         # starts MCP server + dashboard (port varies per project)
 ```
 
 ## Claude Code Setup
@@ -49,7 +49,7 @@ Add the CLAUDE.md dispatch snippet to each project (see `plugin/README.md`).
 
 ## Dashboard
 
-Open `http://localhost:7890` while `docket serve` is running (or use `/docket` skill).
+Run `/docket` to open the dashboard, or check `.docket/port` for the port number.
 
 - Kanban board: Planned / In Progress / Blocked / Done
 - Click a card for full detail, session history, key files

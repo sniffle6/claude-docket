@@ -37,12 +37,23 @@ Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.clau
 
 ## Dashboard
 
-http://localhost:7890 (runs while MCP server is active)
+http://localhost:<port> (port is per-project, see `.docket/port`) (runs while MCP server is active)
 
 ## Architecture
 
 docket.exe runs two things in parallel:
 1. MCP server on stdio (Claude Code talks to this)
-2. HTTP dashboard on :7890 (user opens in browser)
+2. HTTP dashboard on a per-project port (user opens in browser)
 
 Both read/write the same SQLite database at `<project>/.docket/features.db`.
+
+## Feature Tracking (docket)
+
+This project uses `docket` for feature tracking. Dashboard: http://localhost:7890 (or run `/docket`).
+
+Dispatch the `board-manager` agent (model: sonnet) at these points:
+1. **Start of implementation work** — skip for questions/reviews/lookups
+2. **After a commit** — pass commit hash, message, files, feature ID
+3. **Session ending** — pass summary, commits, files, feature ID
+
+Carry the feature ID the agent returns across dispatches. `get_ready` stays in main session.

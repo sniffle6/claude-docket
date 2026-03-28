@@ -1,0 +1,112 @@
+{
+  "name": "Memphis Noir Dark",
+  "variant": "dark",
+  "description": "A Memphis Design-inspired dark theme for dashboards. Olive-grey base with bold tomato red, lime green, and sunny yellow. Offset shadows, heavy outlines, geometric shapes. Full 80s energy, no purple, no blue.",
+
+  "palette": {
+    "primary": {
+      "base": "#FF6B6B",
+      "light": "#FF9B9B",
+      "dark": "#E04545",
+      "contrast": "#EDEADF"
+    },
+    "secondary": {
+      "base": "#95E06C",
+      "light": "#B8F098",
+      "dark": "#6EBA45",
+      "contrast": "#1A2A1A"
+    },
+    "accent": {
+      "base": "#FFD166",
+      "light": "#FFE299",
+      "dark": "#E8B830",
+      "contrast": "#2A2400"
+    }
+  },
+
+  "semantic": {
+    "success": { "base": "#5CB85C", "light": "#2E3A2E", "dark": "#4A9A4A", "contrast": "#1A1A16" },
+    "warning": { "base": "#FF9F43", "light": "#3A3228", "dark": "#E08830", "contrast": "#2A2A24" },
+    "danger":  { "base": "#C73A3A", "light": "#3A2828", "dark": "#A83030", "contrast": "#FFFFFF" },
+    "info":    { "base": "#4ECDC4", "light": "#283A38", "dark": "#3AB5AC", "contrast": "#1A2A28" }
+  },
+
+  "surface": {
+    "background": "#2E2E28",
+    "foreground": "#EDEADF",
+    "card": "#3C3C34",
+    "card-foreground": "#EDEADF",
+    "elevated": "#4A4A40",
+    "elevated-foreground": "#F0EDE5",
+    "overlay": "#1A1A1680",
+    "muted": "#36362E",
+    "muted-foreground": "#8A8878"
+  },
+
+  "border": {
+    "default": "#4A4A40",
+    "strong": "#5A5A50",
+    "subtle": "#36362E",
+    "focus": "#FF6B6B"
+  },
+
+  "action": {
+    "primary": {
+      "background": "#FF6B6B",
+      "text": "#1A1A16",
+      "hover": "#E04545",
+      "active": "#CC3A3A",
+      "disabled-background": "#36362E",
+      "disabled-text": "#5A5A50"
+    },
+    "secondary": {
+      "background": "#3C3C34",
+      "text": "#EDEADF",
+      "hover": "#4A4A40",
+      "active": "#5A5A50",
+      "disabled-background": "#36362E",
+      "disabled-text": "#5A5A50"
+    },
+    "ghost": {
+      "text": "#8A8878",
+      "hover": "#36362E",
+      "active": "#3C3C34"
+    },
+    "destructive": {
+      "background": "#C73A3A",
+      "text": "#FFFFFF",
+      "hover": "#A83030",
+      "active": "#8F2828"
+    },
+    "link": {
+      "default": "#4ECDC4",
+      "hover": "#3AB5AC",
+      "visited": "#7AAA6E"
+    }
+  },
+
+  "input": {
+    "background": "#3C3C34",
+    "text": "#EDEADF",
+    "placeholder": "#6A6A5E",
+    "border": "#4A4A40",
+    "border-focus": "#FF6B6B",
+    "border-error": "#C73A3A",
+    "label": "#D4D1C0",
+    "helper": "#8A8878"
+  },
+
+  "contrast_pairs": [
+    { "foreground": "surface.foreground", "background": "surface.background", "ratio": 11.3, "level": "AAA" },
+    { "foreground": "surface.card-foreground", "background": "surface.card", "ratio": 9.2, "level": "AAA" },
+    { "foreground": "action.primary.text", "background": "action.primary.background", "ratio": 6.3, "level": "AA" },
+    { "foreground": "action.secondary.text", "background": "action.secondary.background", "ratio": 9.2, "level": "AAA" },
+    { "foreground": "action.destructive.text", "background": "action.destructive.background", "ratio": 5.0, "level": "AA" },
+    { "foreground": "input.text", "background": "input.background", "ratio": 9.2, "level": "AAA" },
+    { "foreground": "input.label", "background": "surface.background", "ratio": 8.9, "level": "AAA" },
+    { "foreground": "semantic.success.contrast", "background": "semantic.success.base", "ratio": 7.0, "level": "AAA" },
+    { "foreground": "semantic.warning.contrast", "background": "semantic.warning.base", "ratio": 7.1, "level": "AAA" },
+    { "foreground": "semantic.danger.contrast", "background": "semantic.danger.base", "ratio": 5.0, "level": "AA" },
+    { "foreground": "semantic.info.contrast", "background": "semantic.info.base", "ratio": 7.7, "level": "AAA" }
+  ]
+}

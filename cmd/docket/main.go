@@ -1,10 +1,14 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/server"
 
@@ -34,6 +38,16 @@ func main() {
 	}
 }
 
+// portForDir returns a stable port in the range 7890-8890 based on the
+// absolute project path. Different projects get different ports so multiple
+// docket instances can run simultaneously.
+func portForDir(dir string) int {
+	cleaned := filepath.Clean(strings.ToLower(dir))
+	h := sha256.Sum256([]byte(cleaned))
+	n := binary.BigEndian.Uint16(h[:2])
+	return 7890 + int(n)%1000
+}
+
 func runInit() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -59,11 +73,18 @@ func runServe() {
 	}
 	defer s.Close()
 
-	// Start HTTP dashboard in background
+	// Start HTTP dashboard in background on a per-project port
+	port := portForDir(dir)
+
+	// Write port file so skills/tools can discover the dashboard URL
+	portFile := filepath.Join(dir, ".docket", "port")
+	os.WriteFile(portFile, []byte(fmt.Sprintf("%d", port)), 0644)
+
 	go func() {
 		handler := dashboard.NewHandler(s, staticfiles.StaticFS)
-		log.Printf("Dashboard: http://localhost:7890")
-		if err := http.ListenAndServe(":7890", handler); err != nil {
+		addr := fmt.Sprintf(":%d", port)
+		log.Printf("Dashboard: http://localhost:%d", port)
+		if err := http.ListenAndServe(addr, handler); err != nil {
 			log.Printf("dashboard error: %v", err)
 		}
 	}()
