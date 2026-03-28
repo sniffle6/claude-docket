@@ -759,8 +759,7 @@ document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close
 load();
 setInterval(function() {
   load();
-  // If panel is open, refresh it too
-  if (currentPanelId) showDetail(currentPanelId);
+  // Don't refresh panel — it wipes unsaved notes textarea
 }, 10000);
 </script>
 </body>
