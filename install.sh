@@ -49,7 +49,12 @@ cp -r "$SOURCE_DIR/plugin/skills" "$PLUGIN_INSTALL/"
 cp "$SOURCE_DIR/plugin/README.md" "$PLUGIN_INSTALL/"
 
 # Generate .mcp.json with absolute path to binary
-FEAT_BIN_JSON=$(echo "$FEAT_BIN" | sed 's|\\|/|g')
+# Convert to forward-slash Windows path for JSON (C:/Users/... not /c/Users/...)
+if command -v cygpath &> /dev/null; then
+    FEAT_BIN_JSON=$(cygpath -m "$FEAT_BIN")
+else
+    FEAT_BIN_JSON=$(echo "$FEAT_BIN" | sed 's|\\|/|g')
+fi
 cat > "$PLUGIN_INSTALL/.mcp.json" << MCPEOF
 {
   "mcpServers": {
