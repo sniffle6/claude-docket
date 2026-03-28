@@ -56,6 +56,10 @@ CREATE TABLE IF NOT EXISTS task_items (
 );
 `
 
+const schemaV4 = `
+ALTER TABLE features ADD COLUMN notes TEXT NOT NULL DEFAULT '';
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -64,5 +68,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV2)
 	// v3: add subtasks and task_items tables (ignore error if already exists)
 	db.Exec(schemaV3)
+	// v4: add notes column (ignore error if already exists)
+	db.Exec(schemaV4)
 	return nil
 }
