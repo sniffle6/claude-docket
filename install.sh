@@ -80,7 +80,12 @@ fi
 # --- Step 4: Register plugin in installed_plugins.json ---
 
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
-INSTALL_PATH_JSON=$(echo "$PLUGIN_INSTALL" | sed 's|/|\\\\|g')
+# Convert to Windows path with escaped backslashes for JSON
+if command -v cygpath &> /dev/null; then
+    INSTALL_PATH_JSON=$(cygpath -w "$PLUGIN_INSTALL" | sed 's|\\|\\\\|g')
+else
+    INSTALL_PATH_JSON=$(echo "$PLUGIN_INSTALL" | sed 's|/|\\\\|g')
+fi
 
 if [ -f "$PLUGINS_FILE" ]; then
     if grep -q '"feat@local"' "$PLUGINS_FILE" 2>/dev/null; then
