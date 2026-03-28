@@ -88,6 +88,87 @@ func TestSessionStartNoFeatures(t *testing.T) {
 	}
 }
 
+func TestStopWithCommitsAndFeature(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := s.AddFeature("My Feature", "testing stop hook")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := "in_progress"
+	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+	s.Close()
+
+	// Write a commits.log
+	commitsPath := filepath.Join(dir, ".docket", "commits.log")
+	os.WriteFile(commitsPath, []byte("abc123|||feat: add something\ndef456|||fix: broken thing\n"), 0644)
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "Stop",
+	}
+
+	var buf bytes.Buffer
+	handleStop(h, &buf)
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true")
+	}
+	if !strings.Contains(out.SystemMessage, "abc123") {
+		t.Errorf("expected commit hash in message, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "my-feature") {
+		t.Errorf("expected feature ID in message, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "log_session") {
+		t.Errorf("expected log_session instruction, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "board-manager") {
+		t.Errorf("expected board-manager instruction, got: %s", out.SystemMessage)
+	}
+}
+
+func TestStopNoCommitsNoFeatures(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "Stop",
+	}
+
+	var buf bytes.Buffer
+	handleStop(h, &buf)
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true")
+	}
+	if !strings.Contains(out.SystemMessage, "No commits") {
+		t.Errorf("expected 'No commits' in message, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "skip log_session") {
+		t.Errorf("expected skip instruction, got: %s", out.SystemMessage)
+	}
+}
+
 func TestPostToolUseIgnoresNonCommit(t *testing.T) {
 	dir := t.TempDir()
 

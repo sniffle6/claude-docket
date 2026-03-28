@@ -14,7 +14,7 @@ The plugin declares hooks in `plugin/hooks/hooks.json`. Claude Code fires these 
 
 1. `SessionStart` → runs `docket.exe hook` → outputs feature context as systemMessage
 2. `PostToolUse` (Bash only) → runs `docket.exe hook` → checks for `git commit`, appends to commits.log
-3. `Stop` → prompt hook → Claude summarizes, calls log_session, dispatches board-manager
+3. `Stop` → runs `docket.exe hook` → reads commits.log + active features → outputs structured instructions as systemMessage
 
 ## Key files
 
@@ -27,4 +27,4 @@ The plugin declares hooks in `plugin/hooks/hooks.json`. Claude Code fires these 
 - Hooks load at session start. After updating docket, restart Claude Code.
 - If a session crashes, stale `commits.log` may exist. SessionStart clears it.
 - Multiple in_progress features: all are listed, but next task is only shown for the first one.
-- The Stop prompt hook costs tokens (LLM summarization). This is intentional — summaries are the most useful part of session logs.
+- The Stop hook tells Claude to call log_session and dispatch board-manager. This costs tokens but summaries are the most useful part of session logs.

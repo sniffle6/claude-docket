@@ -41,6 +41,8 @@ func runHook() {
 		handleSessionStart(&h, os.Stdout)
 	case "PostToolUse":
 		handlePostToolUse(&h)
+	case "Stop":
+		handleStop(&h, os.Stdout)
 	}
 }
 
@@ -94,6 +96,65 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 		out.SystemMessage = msg.String()
 	}
 
+	json.NewEncoder(w).Encode(out)
+}
+
+func handleStop(h *hookInput, w io.Writer) {
+	out := hookOutput{Continue: true}
+
+	// Read commits.log if it exists
+	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
+	var commits []string
+	if data, err := os.ReadFile(commitsPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
+		for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			if line != "" {
+				commits = append(commits, line)
+			}
+		}
+	}
+
+	// Find active feature
+	s, err := store.Open(h.CWD)
+	if err != nil {
+		json.NewEncoder(w).Encode(out)
+		return
+	}
+	defer s.Close()
+
+	features, err := s.ListFeatures("in_progress")
+	if err != nil {
+		json.NewEncoder(w).Encode(out)
+		return
+	}
+
+	var msg strings.Builder
+	msg.WriteString("[docket] Session ending.\n")
+
+	if len(commits) > 0 {
+		msg.WriteString("Commits this session:\n")
+		for _, c := range commits {
+			msg.WriteString("  " + c + "\n")
+		}
+	} else {
+		msg.WriteString("No commits this session.\n")
+	}
+
+	if len(features) > 0 {
+		msg.WriteString("Active features:\n")
+		for _, f := range features {
+			msg.WriteString(fmt.Sprintf("  - %s (id: %s)\n", f.Title, f.ID))
+		}
+		msg.WriteString(fmt.Sprintf("\nCall log_session for feature \"%s\" with a summary of what was accomplished, files touched, and commit hashes. ", features[0].ID))
+		msg.WriteString(fmt.Sprintf("Then dispatch the board-manager agent (model: sonnet) with the session summary, commits, files, and feature_id=\"%s\".", features[0].ID))
+	} else {
+		msg.WriteString("No active features — skip log_session.\n")
+	}
+
+	if len(commits) > 0 {
+		msg.WriteString(fmt.Sprintf("\nAfter logging, delete %s.", commitsPath))
+	}
+
+	out.SystemMessage = msg.String()
 	json.NewEncoder(w).Encode(out)
 }
 
