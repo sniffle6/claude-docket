@@ -1,0 +1,30 @@
+# Docket Auto-Tracking Hooks
+
+Docket automatically tracks your session activity using Claude Code lifecycle hooks. No manual steps needed.
+
+## What it does
+
+- **Session start**: Injects active feature context (title, status, left_off, next task) into the conversation
+- **After git commits**: Records each commit hash and message to `.docket/commits.log`
+- **Session end**: Claude summarizes the session, logs it via `log_session`, and dispatches `board-manager` to update the board
+
+## How it works
+
+The plugin declares hooks in `plugin/hooks/hooks.json`. Claude Code fires these automatically:
+
+1. `SessionStart` → runs `docket.exe hook` → outputs feature context as systemMessage
+2. `PostToolUse` (Bash only) → runs `docket.exe hook` → checks for `git commit`, appends to commits.log
+3. `Stop` → prompt hook → Claude summarizes, calls log_session, dispatches board-manager
+
+## Key files
+
+- `cmd/docket/hook.go` — hook subcommand logic
+- `plugin/hooks/hooks.json` — hook declarations
+- `install.sh` — installs hooks and replaces binary path placeholder
+
+## Gotchas
+
+- Hooks load at session start. After updating docket, restart Claude Code.
+- If a session crashes, stale `commits.log` may exist. SessionStart clears it.
+- Multiple in_progress features: all are listed, but next task is only shown for the first one.
+- The Stop prompt hook costs tokens (LLM summarization). This is intentional — summaries are the most useful part of session logs.
