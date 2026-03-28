@@ -13,7 +13,7 @@ func TestOpenCreatesDB(t *testing.T) {
 	}
 	defer s.Close()
 
-	dbPath := dir + "/.feat/features.db"
+	dbPath := dir + "/.docket/features.db"
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("db file not created: %v", err)
 	}

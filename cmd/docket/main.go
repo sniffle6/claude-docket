@@ -10,7 +10,7 @@ import (
 
 	staticfiles "github.com/sniffle6/claude-docket/dashboard"
 	"github.com/sniffle6/claude-docket/internal/dashboard"
-	featmcp "github.com/sniffle6/claude-docket/internal/mcp"
+	docketmcp "github.com/sniffle6/claude-docket/internal/mcp"
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
@@ -69,7 +69,7 @@ func runServe() {
 	}()
 
 	// Run MCP server on stdio (blocks)
-	mcpServer := featmcp.NewServer(s)
+	mcpServer := docketmcp.NewServer(s)
 	if err := server.ServeStdio(mcpServer); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}
