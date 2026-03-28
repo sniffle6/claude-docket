@@ -19,6 +19,7 @@ type Feature struct {
 	Description  string    `json:"description"`
 	Status       string    `json:"status"`
 	LeftOff      string    `json:"left_off"`
+	Notes        string    `json:"notes"`
 	KeyFiles     []string  `json:"key_files"`
 	WorktreePath string    `json:"worktree_path"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -30,6 +31,7 @@ type FeatureUpdate struct {
 	Description  *string   `json:"description,omitempty"`
 	Status       *string   `json:"status,omitempty"`
 	LeftOff      *string   `json:"left_off,omitempty"`
+	Notes        *string   `json:"notes,omitempty"`
 	KeyFiles     *[]string `json:"key_files,omitempty"`
 	WorktreePath *string   `json:"worktree_path,omitempty"`
 }
@@ -93,12 +95,12 @@ func (s *Store) AddFeature(title, description string) (*Feature, error) {
 
 func (s *Store) GetFeature(id string) (*Feature, error) {
 	row := s.db.QueryRow(
-		`SELECT id, title, description, status, left_off, key_files, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
+		`SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
 		id,
 	)
 	var f Feature
 	var keyFilesJSON string
-	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
+	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get feature %q: %w", id, err)
 	}
@@ -128,6 +130,10 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 		sets = append(sets, "left_off = ?")
 		args = append(args, *u.LeftOff)
 	}
+	if u.Notes != nil {
+		sets = append(sets, "notes = ?")
+		args = append(args, *u.Notes)
+	}
 	if u.KeyFiles != nil {
 		kf, _ := json.Marshal(*u.KeyFiles)
 		sets = append(sets, "key_files = ?")
@@ -156,7 +162,7 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 }
 
 func (s *Store) ListFeatures(status string) ([]Feature, error) {
-	query := `SELECT id, title, description, status, left_off, key_files, worktree_path, created_at, updated_at FROM features`
+	query := `SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features`
 	var args []any
 	if status != "" {
 		query += " WHERE status = ?"
@@ -172,7 +178,7 @@ func (s *Store) ListFeatures(status string) ([]Feature, error) {
 	for rows.Next() {
 		var f Feature
 		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
@@ -297,7 +303,7 @@ func scanSessions(rows *sql.Rows) ([]Session, error) {
 
 func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, description, status, left_off, key_files, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
+		`SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get ready features: %w", err)
@@ -307,7 +313,7 @@ func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	for rows.Next() {
 		var f Feature
 		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
