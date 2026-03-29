@@ -16,7 +16,7 @@ Initialize docket in the current project. Creates the database directory and add
 
 2. **Check if CLAUDE.md exists** at the project root. If not, create it with a project heading.
 
-3. **Check if CLAUDE.md already has a docket section** (grep for "Feature Tracking (docket)"). If it does, tell the user to run `/docket-update` to refresh it, and stop.
+3. **Check if CLAUDE.md already has a docket section** (grep for "## Feature Tracking (docket)"). If it does, tell the user to run `/docket-update` to refresh it, and stop.
 
 4. **Run the update command** to insert the docket section into CLAUDE.md:
    ```bash

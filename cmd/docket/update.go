@@ -12,16 +12,27 @@ This project uses ` + "`docket`" + ` for feature tracking. Dashboard: http://loc
 
 **Small tasks** (cosmetic changes, one-off fixes, config tweaks): call ` + "`quick_track`" + ` MCP tool directly — one call, no agent dispatch needed. Pass title, commit_hash, and key_files.
 
-**Larger features** (multi-step, plan-driven, complex): dispatch the ` + "`board-manager`" + ` agent (model: sonnet) at these points:
-1. **Before writing any code for a new task** — if the user asks to build, fix, or add something, dispatch board-manager FIRST to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
-2. **After a commit** — pass commit hash, message, files, feature ID
-3. **After subagent implementation work** — subagent commits bypass PostToolUse hooks. After an implementer subagent returns with commits, dispatch board-manager with all new commit hashes, messages, and files. Don't wait for per-commit dispatches — batch them.
+**Larger features** (multi-step, plan-driven, complex):
 
-Session logging is handled automatically by the Stop hook (no agent dispatch needed).
+Start of work — dispatch ` + "`board-manager`" + ` agent (model: sonnet) to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
 
-Carry the feature ID the agent returns across dispatches. ` + "`get_ready`" + ` stays in main session.
+After a commit — use **direct MCP calls** by default, not agent dispatch:
+- ` + "`update_feature`" + ` — set left_off, key_files, status on the existing feature
+- ` + "`complete_task_item`" + ` / ` + "`complete_task_items`" + ` — check off task items with outcome and commit_hash
+- ` + "`add_decision`" + ` — record a notable decision
 
-**If user rejects a board-manager dispatch**, fix the issue (e.g., missing context) and retry — don't silently drop the dispatch for the rest of the session.
+Only dispatch board-manager after a commit when the update requires judgment:
+- The commit adds a plan file that needs importing and structuring
+- The feature needs new subtasks or task items created
+- Significant status change or handoff enrichment is needed
+
+After subagent implementation work — subagent commits bypass PostToolUse hooks. Use direct MCP calls to batch-update the feature with all new commit hashes and complete relevant task items. Dispatch board-manager only if restructuring is needed.
+
+Session logging and handoff files are handled automatically by the Stop hook (no agent dispatch needed).
+
+Carry the feature ID across the session. ` + "`get_ready`" + ` stays in main session.
+
+**If user rejects a docket update**, fix the issue (e.g., missing context) and retry — don't silently drop tracking for the rest of the session.
 `
 
 const sectionHeading = "## Feature Tracking (docket)"

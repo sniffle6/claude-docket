@@ -21,7 +21,7 @@ go build
 `
 	result := updateDocketSection(input)
 
-	if !strings.Contains(result, "Before writing any code for a new task") {
+	if !strings.Contains(result, "direct MCP calls") {
 		t.Error("expected new snippet content")
 	}
 	if strings.Contains(result, "Old snippet") {
@@ -102,7 +102,7 @@ Old content at the end of file.`
 
 	result := updateDocketSection(input)
 
-	if !strings.Contains(result, "Before writing any code for a new task") {
+	if !strings.Contains(result, "direct MCP calls") {
 		t.Error("expected new snippet content")
 	}
 	if strings.Contains(result, "Old content at the end") {
