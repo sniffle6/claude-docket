@@ -74,26 +74,24 @@ Store tests: `s, _ := Open(t.TempDir())` gives a fresh DB. No mocks, no cleanup 
 
 This project uses `docket` for feature tracking. Dashboard: http://localhost:<port> (or run `/docket`).
 
-**Small tasks** (cosmetic changes, one-off fixes, config tweaks): call `quick_track` MCP tool directly — one call, no agent dispatch needed. Pass title, commit_hash, and key_files.
+**Small tasks** (cosmetic changes, one-off fixes, config tweaks): call `quick_track` directly — one call, no agent dispatch needed.
 
 **Larger features** (multi-step, plan-driven, complex):
 
-Start of work — dispatch `board-manager` agent (model: sonnet) to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
+Start of work — call `get_ready` to find existing features, then dispatch `board-manager` agent (model: sonnet) to create or find a card. Use `type` param (feature/bugfix/chore/spike) to auto-generate subtask templates.
 
-After a commit — use **direct MCP calls** by default, not agent dispatch:
-- `update_feature` — set left_off, key_files, status on the existing feature
-- `complete_task_item` — check off task items with outcome and commit_hash (pass `items` JSON array for batch)
-- `add_decision` — record a notable decision
+After a commit — use **direct MCP calls**, not agent dispatch:
+- `update_feature` — set left_off, key_files, status. Completion gate blocks `done` with unchecked items — pass `force=true` + `force_reason` to override.
+- `complete_task_item` — check off items with outcome and commit_hash (pass `items` JSON array for batch)
+- `add_decision` — record notable decisions (accepted/rejected with reason)
+- `add_issue` / `resolve_issue` — track bugs found during work
 
-Only dispatch board-manager after a commit when the update requires judgment:
-- The commit adds a plan file that needs importing and structuring
-- The feature needs new subtasks or task items created
-- Significant status change or handoff enrichment is needed
+Only dispatch board-manager when the update needs judgment (plan imports needing restructuring, new subtasks needed).
 
-After subagent implementation work — subagent commits bypass PostToolUse hooks. Use direct MCP calls to batch-update the feature with all new commit hashes and complete relevant task items. Dispatch board-manager only if restructuring is needed.
+Use `get_context` (not `get_feature`) for routine status checks — it's token-efficient (~15 lines).
 
-Session logging and handoff files are handled automatically by the Stop hook (no agent dispatch needed).
+Session logging and handoff files are handled automatically by the Stop hook.
 
-Carry the feature ID across the session. `get_ready` stays in main session.
+Carry the feature ID across the session.
 
-**If user rejects a docket update**, fix the issue (e.g., missing context) and retry — don't silently drop tracking for the rest of the session.
+**If user rejects a docket update**, fix the issue and retry — don't drop tracking.

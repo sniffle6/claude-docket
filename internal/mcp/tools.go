@@ -72,14 +72,6 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("plan_path", mcp.Required(), mcp.Description("Absolute path to the plan markdown file")),
 	), importPlanHandler(s))
 
-	srv.AddTool(mcp.NewTool("complete_task_item",
-		mcp.WithDescription("Mark a task item as done with outcome, commit hash, and key files."),
-		mcp.WithString("id", mcp.Required(), mcp.Description("Task item ID (number)")),
-		mcp.WithString("outcome", mcp.Required(), mcp.Description("One-liner of what was accomplished")),
-		mcp.WithString("commit_hash", mcp.Description("Git commit SHA")),
-		mcp.WithString("key_files", mcp.Description("Comma-separated file paths modified")),
-	), completeTaskItemHandler(s))
-
 	srv.AddTool(mcp.NewTool("add_subtask",
 		mcp.WithDescription("Add subtask(s) to a feature. Use pipe-separated titles for multiple (e.g., 'Phase 1|Phase 2|Phase 3')."),
 		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID")),
