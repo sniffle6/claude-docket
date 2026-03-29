@@ -79,6 +79,21 @@ The plugin includes a `board-manager` agent (runs on Sonnet) that autonomously:
 
 At session end, docket generates structured markdown files at `.docket/handoff/<feature-id>.md` with status, progress, next tasks, key files, and recent activity. The next session gets this injected automatically — no re-discovery needed. See [docs/handoff-files.md](docs/handoff-files.md).
 
+### Feature Templates
+
+When creating a feature, pass a `type` to auto-generate a standard subtask structure:
+
+- **feature** — Planning, Implementation, Polish
+- **bugfix** — Investigation, Fix
+- **chore** — Work (single phase)
+- **spike** — Research (single phase)
+
+Templates are fire-and-forget — once created, subtasks are fully independent. See [docs/feature-templates.md](docs/feature-templates.md).
+
+### Completion Gate
+
+Features can't be marked `done` until all task items are checked and all issues are resolved. If something is outstanding, the update is rejected with a clear message. Override with `force=true` to force-complete — this auto-logs a decision for audit.
+
 ### Decision Log
 
 Each feature can have decisions logged against it — what was considered, whether it was accepted or rejected, and why. Rejected decisions are surfaced in context briefings so Claude doesn't re-explore dead ends. See [docs/decision-log.md](docs/decision-log.md).
@@ -87,8 +102,8 @@ Each feature can have decisions logged against it — what was considered, wheth
 
 | Tool | Purpose |
 |------|---------|
-| `add_feature` | Create a feature. Returns slug ID. |
-| `update_feature` | Update status, description, left_off, worktree_path, key_files. |
+| `add_feature` | Create a feature. Optional `type` (feature/bugfix/chore/spike) auto-generates subtasks from template. |
+| `update_feature` | Update status, description, left_off, key_files, etc. Completion gate blocks `done` with unchecked items — use `force`/`force_reason` to override. |
 | `list_features` | Compact feature list, filterable by status. |
 | `get_feature` | Full feature detail with sessions, subtasks, decisions. |
 | `get_context` | Token-efficient briefing (~15-20 lines). |
@@ -140,6 +155,7 @@ The installed plugin provides:
 - [docs/docket-hooks.md](docs/docket-hooks.md) — How automatic session tracking works
 - [docs/handoff-files.md](docs/handoff-files.md) — Cross-session context handoff
 - [docs/decision-log.md](docs/decision-log.md) — Decision tracking per feature
+- [docs/feature-templates.md](docs/feature-templates.md) — Feature types, templates, and completion gate
 - [docs/issue-tracking.md](docs/issue-tracking.md) — Bug/issue tracking per feature
 - [docs/quick-track.md](docs/quick-track.md) — Lightweight one-call tracking for small tasks
 - [docs/mcp-stability.md](docs/mcp-stability.md) — SQLite contention and crash prevention
