@@ -96,7 +96,11 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		if subtasks == nil {
 			subtasks = []store.Subtask{}
 		}
-		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions})
+		decisions, _ := s.GetDecisionsForFeature(id)
+		if decisions == nil {
+			decisions = []store.Decision{}
+		}
+		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions, "decisions": decisions})
 	})
 
 	mux.HandleFunc("PATCH /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
