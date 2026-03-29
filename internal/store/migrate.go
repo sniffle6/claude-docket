@@ -71,6 +71,19 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 `
 
+const schemaV6 = `
+CREATE TABLE IF NOT EXISTS issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    feature_id TEXT NOT NULL REFERENCES features(id),
+    task_item_id INTEGER REFERENCES task_items(id),
+    description TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open', 'resolved')),
+    resolved_commit TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    resolved_at DATETIME
+);
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -83,5 +96,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV4)
 	// v5: add decisions table (ignore error if already exists)
 	db.Exec(schemaV5)
+	// v6: add issues table (ignore error if already exists)
+	db.Exec(schemaV6)
 	return nil
 }
