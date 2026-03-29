@@ -61,6 +61,8 @@ func runHook() {
 		handlePostToolUse(&h, os.Stdout)
 	case "Stop":
 		handleStop(&h, os.Stdout)
+	default:
+		json.NewEncoder(os.Stdout).Encode(hookOutput{Continue: true})
 	}
 }
 
@@ -68,6 +70,7 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	s, err := store.Open(h.CWD)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docket hook: open store: %v\n", err)
+		json.NewEncoder(w).Encode(hookOutput{Continue: true})
 		return
 	}
 	defer s.Close()
@@ -79,6 +82,7 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	features, err := s.ListFeatures("in_progress")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docket hook: list features: %v\n", err)
+		json.NewEncoder(w).Encode(hookOutput{Continue: true})
 		return
 	}
 
