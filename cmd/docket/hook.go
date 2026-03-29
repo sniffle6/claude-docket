@@ -167,52 +167,27 @@ func handleStop(h *hookInput, w io.Writer) {
 	// Re-trigger (second stop): write handoff files and allow stop
 	if h.StopHookActive {
 		// Fallback: if Claude didn't call log_session, log a mechanical summary
-		if len(features) > 0 && len(commits) > 0 {
+		if len(features) > 0 && len(commits) > 0 && !s.WasSessionLogged() {
 			f := features[0]
-			sessions, sessErr := s.GetSessionsForFeature(f.ID)
-			hasRecentSession := false
-			if sessErr == nil && len(sessions) > 0 {
-				// Check if a session was logged after the first stop blocked
-				// (i.e., Claude called log_session as prompted)
-				for _, sess := range sessions {
-					for _, c := range sess.Commits {
-						for _, logLine := range commits {
-							parts := strings.SplitN(logLine, "|||", 2)
-							if len(parts) == 2 && parts[0] == c {
-								hasRecentSession = true
-								break
-							}
-						}
-						if hasRecentSession {
-							break
-						}
-					}
-					if hasRecentSession {
-						break
-					}
+			var summaryParts []string
+			var commitHashes []string
+			for _, c := range commits {
+				parts := strings.SplitN(c, "|||", 2)
+				if len(parts) == 2 {
+					commitHashes = append(commitHashes, parts[0])
+					summaryParts = append(summaryParts, parts[1])
 				}
 			}
-			if !hasRecentSession {
-				// Claude didn't log a session — fall back to mechanical summary
-				var summaryParts []string
-				var commitHashes []string
-				for _, c := range commits {
-					parts := strings.SplitN(c, "|||", 2)
-					if len(parts) == 2 {
-						commitHashes = append(commitHashes, parts[0])
-						summaryParts = append(summaryParts, parts[1])
-					}
-				}
-				if len(commitHashes) > 0 {
-					summary := fmt.Sprintf("%d commit(s): %s", len(commitHashes), strings.Join(summaryParts, "; "))
-					s.LogSession(store.SessionInput{
-						FeatureID: f.ID,
-						Summary:   summary,
-						Commits:   commitHashes,
-					})
-				}
+			if len(commitHashes) > 0 {
+				summary := fmt.Sprintf("%d commit(s): %s", len(commitHashes), strings.Join(summaryParts, "; "))
+				s.LogSession(store.SessionInput{
+					FeatureID: f.ID,
+					Summary:   summary,
+					Commits:   commitHashes,
+				})
 			}
 		}
+		s.ClearSessionLogged()
 
 		if len(commits) > 0 {
 			os.Remove(commitsPath)

@@ -253,6 +253,7 @@ func TestStopRetriggerNoDoubleLog(t *testing.T) {
 		Summary:   "Rich AI summary of the session",
 		Commits:   []string{"abc123"},
 	})
+	s.MarkSessionLogged()
 	s.Close()
 
 	// Write a commits.log with the same commit

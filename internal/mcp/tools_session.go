@@ -53,6 +53,7 @@ func logSessionHandler(s *store.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
+		s.MarkSessionLogged()
 		return mcp.NewToolResultText(fmt.Sprintf("Session #%d logged.", sess.ID)), nil
 	}
 }

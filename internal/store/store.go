@@ -55,7 +55,8 @@ func slugify(title string) string {
 }
 
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	dir string // .docket directory path
 }
 
 func Open(projectDir string) (*Store, error) {
@@ -79,11 +80,28 @@ func Open(projectDir string) (*Store, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 
-	return &Store{db: db}, nil
+	return &Store{db: db, dir: featDir}, nil
 }
 
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// MarkSessionLogged writes a sentinel file so the Stop hook knows
+// log_session was called (avoids complex commit-matching logic).
+func (s *Store) MarkSessionLogged() {
+	os.WriteFile(filepath.Join(s.dir, "session-logged"), []byte{}, 0644)
+}
+
+// WasSessionLogged checks if the sentinel file exists.
+func (s *Store) WasSessionLogged() bool {
+	_, err := os.Stat(filepath.Join(s.dir, "session-logged"))
+	return err == nil
+}
+
+// ClearSessionLogged removes the sentinel file.
+func (s *Store) ClearSessionLogged() {
+	os.Remove(filepath.Join(s.dir, "session-logged"))
 }
 
 func (s *Store) AddFeature(title, description string) (*Feature, error) {
