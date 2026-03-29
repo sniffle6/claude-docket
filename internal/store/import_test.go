@@ -3,6 +3,7 @@ package store
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,6 +67,25 @@ func TestImportPlan(t *testing.T) {
 	}
 	if len(subtasks[0].Items[0].KeyFiles) != 2 {
 		t.Errorf("item 0 key_files = %d, want 2", len(subtasks[0].Items[0].KeyFiles))
+	}
+}
+
+func TestImportPlanRefusesDoneFeature(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Test Feature", "")
+	done := "done"
+	s.UpdateFeature("test-feature", FeatureUpdate{Status: &done})
+
+	dir := t.TempDir()
+	planPath := filepath.Join(dir, "plan.md")
+	os.WriteFile(planPath, []byte(testPlan), 0644)
+
+	_, err := s.ImportPlan("test-feature", planPath)
+	if err == nil {
+		t.Fatal("expected error importing plan on done feature, got nil")
+	}
+	if !strings.Contains(err.Error(), "done") {
+		t.Errorf("error should mention done status, got: %v", err)
 	}
 }
 

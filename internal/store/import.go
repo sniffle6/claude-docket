@@ -28,6 +28,14 @@ var (
 )
 
 func (s *Store) ImportPlan(featureID, planPath string) (*ImportResult, error) {
+	feat, err := s.GetFeature(featureID)
+	if err != nil {
+		return nil, fmt.Errorf("get feature: %w", err)
+	}
+	if feat.Status == "done" {
+		return nil, fmt.Errorf("feature %q has status done — reset status before re-importing a plan", featureID)
+	}
+
 	file, err := os.Open(planPath)
 	if err != nil {
 		return nil, fmt.Errorf("open plan: %w", err)
