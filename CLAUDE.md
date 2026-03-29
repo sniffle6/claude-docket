@@ -20,7 +20,7 @@ go test ./...
 bash install.sh
 ```
 
-Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.claude/plugins/cache/local/docket/0.1.0/`.
+Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.claude/plugins/marketplaces/local/docket/`.
 
 ## Key Files
 
