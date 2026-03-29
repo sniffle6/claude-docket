@@ -118,6 +118,72 @@ func TestWriteHandoffFile(t *testing.T) {
 	}
 }
 
+func TestWriteHandoffPreservesEnrichment(t *testing.T) {
+	dir := t.TempDir()
+	handoffDir := filepath.Join(dir, ".docket", "handoff")
+	os.MkdirAll(handoffDir, 0755)
+
+	// Simulate board-manager enriched handoff already on disk
+	existing := "# Handoff: Test Feature\n\n## Status\nin_progress | Progress: 1/3 | Updated: 2026-03-28 10:00\n\n" +
+		"## Decisions & Context\n- Chose JWT over session cookies for statelessness\n- Rejected opaque tokens due to introspection overhead\n\n" +
+		"## Gotchas\n- Token rotation must handle concurrent requests gracefully\n\n" +
+		"## Recommended Approach\n- Implement refresh endpoint next, then middleware\n"
+	os.WriteFile(filepath.Join(handoffDir, "test-feature.md"), []byte(existing), 0644)
+
+	// Stop hook writes new mechanical baseline — should preserve enrichment
+	data := &store.HandoffData{
+		Feature: store.Feature{
+			ID:        "test-feature",
+			Title:     "Test Feature",
+			Status:    "in_progress",
+			LeftOff:   "refresh tokens",
+			KeyFiles:  []string{},
+			UpdatedAt: time.Date(2026, 3, 28, 12, 0, 0, 0, time.UTC),
+		},
+		Done:  2,
+		Total: 3,
+	}
+
+	err := writeHandoffFile(dir, data)
+	if err != nil {
+		t.Fatalf("writeHandoffFile: %v", err)
+	}
+
+	content, _ := os.ReadFile(filepath.Join(handoffDir, "test-feature.md"))
+	result := string(content)
+
+	// Mechanical baseline should be updated
+	if !strings.Contains(result, "Progress: 2/3") {
+		t.Error("baseline should be updated to new progress")
+	}
+	if !strings.Contains(result, "12:00") {
+		t.Error("baseline should have new timestamp")
+	}
+
+	// Enrichment sections should be preserved
+	for _, want := range []string{
+		"## Decisions & Context",
+		"Chose JWT over session cookies",
+		"## Gotchas",
+		"Token rotation must handle concurrent requests",
+		"## Recommended Approach",
+		"Implement refresh endpoint next",
+	} {
+		if !strings.Contains(result, want) {
+			t.Errorf("enrichment lost: missing %q in:\n%s", want, result)
+		}
+	}
+}
+
+func TestExtractEnrichmentSectionsEmpty(t *testing.T) {
+	// No enrichment sections — should return empty
+	content := "# Handoff: Test\n\n## Status\nin_progress\n\n## Left Off\nsome work\n"
+	result := extractEnrichmentSections(content)
+	if result != "" {
+		t.Errorf("expected empty, got: %q", result)
+	}
+}
+
 func TestCleanStaleHandoffs(t *testing.T) {
 	dir := t.TempDir()
 	handoffDir := filepath.Join(dir, ".docket", "handoff")

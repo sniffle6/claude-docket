@@ -72,6 +72,12 @@ echo "Generated $PLUGIN_INSTALL/.mcp.json"
 if [ -d "$SOURCE_DIR/plugin/hooks" ]; then
     cp -r "$SOURCE_DIR/plugin/hooks" "$PLUGIN_INSTALL/"
     sed -i "s|DOCKET_EXE_PATH|$DOCKET_BIN_JSON|g" "$PLUGIN_INSTALL/hooks/hooks.json"
+    # Verify placeholder was actually replaced
+    if grep -q "DOCKET_EXE_PATH" "$PLUGIN_INSTALL/hooks/hooks.json"; then
+        echo "ERROR: Failed to replace DOCKET_EXE_PATH in hooks.json. Hooks will not work."
+        echo "Manual fix: replace DOCKET_EXE_PATH with $DOCKET_BIN_JSON in $PLUGIN_INSTALL/hooks/hooks.json"
+        exit 1
+    fi
     echo "Installed hooks with binary path: $DOCKET_BIN_JSON"
 fi
 
@@ -81,8 +87,18 @@ if [ -f "$SETTINGS_FILE" ]; then
     if grep -q '"docket@local"' "$SETTINGS_FILE" 2>/dev/null; then
         echo "docket@local already in settings.json — skipping"
     else
-        # Insert docket@local into enabledPlugins object
-        sed -i 's/"enabledPlugins": {/"enabledPlugins": {\n    "docket@local": true,/' "$SETTINGS_FILE"
+        # Use Python for reliable cross-platform JSON manipulation (sed mangles newlines on Windows)
+        python3 -c "
+import json, sys
+pf = sys.argv[1]
+with open(pf, 'r') as f:
+    data = json.load(f)
+if 'enabledPlugins' not in data:
+    data['enabledPlugins'] = {}
+data['enabledPlugins']['docket@local'] = True
+with open(pf, 'w') as f:
+    json.dump(data, f, indent=2)
+" "$SETTINGS_FILE"
         echo "Added docket@local to settings.json"
     fi
 else
