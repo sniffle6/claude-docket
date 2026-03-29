@@ -23,6 +23,7 @@ type featureWithProgress struct {
 	ProgressTotal   int               `json:"progress_total"`
 	NextTask        string            `json:"next_task"`
 	SubtaskProgress []subtaskProgress `json:"subtask_progress"`
+	IssueCount      int               `json:"issue_count"`
 }
 
 func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler {
@@ -71,6 +72,7 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			if fp.SubtaskProgress == nil {
 				fp.SubtaskProgress = []subtaskProgress{}
 			}
+			fp.IssueCount, _ = s.GetOpenIssueCount(f.ID)
 
 			result = append(result, fp)
 		}
@@ -100,7 +102,11 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		if decisions == nil {
 			decisions = []store.Decision{}
 		}
-		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions, "decisions": decisions})
+		issues, _ := s.GetIssuesForFeature(id)
+		if issues == nil {
+			issues = []store.Issue{}
+		}
+		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions, "decisions": decisions, "issues": issues})
 	})
 
 	mux.HandleFunc("PATCH /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
