@@ -114,6 +114,14 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
 	), getFullContextHandler(s))
 
+	srv.AddTool(mcp.NewTool("quick_track",
+		mcp.WithDescription("Lightweight tracking for small, self-contained tasks (cosmetic changes, one-off fixes, config tweaks). One call — creates or updates a feature card with optional commit. Use instead of dispatching board-manager for simple work."),
+		mcp.WithString("title", mcp.Required(), mcp.Description("What was done (e.g., 'Add logo to README and dashboard')")),
+		mcp.WithString("commit_hash", mcp.Description("Git commit SHA to attach")),
+		mcp.WithString("key_files", mcp.Description("Comma-separated file paths touched")),
+		mcp.WithString("status", mcp.Description("Feature status: done (default), in_progress, planned")),
+	), quickTrackHandler(s))
+
 	srv.AddTool(mcp.NewTool("add_decision",
 		mcp.WithDescription("Log a decision on a feature. Records what approach was considered, whether it was accepted or rejected, and why. Prevents re-exploring dead ends across sessions."),
 		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID")),
@@ -659,6 +667,37 @@ func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 			Decisions: decisions,
 		}, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func quickTrackHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		title := args["title"].(string)
+
+		input := store.QuickTrackInput{Title: title}
+		if v, ok := args["commit_hash"].(string); ok && v != "" {
+			input.CommitHash = v
+		}
+		if v, ok := args["status"].(string); ok && v != "" {
+			input.Status = v
+		}
+		if v, ok := args["key_files"].(string); ok && v != "" {
+			for _, f := range strings.Split(v, ",") {
+				input.KeyFiles = append(input.KeyFiles, strings.TrimSpace(f))
+			}
+		}
+
+		result, err := s.QuickTrack(input)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		action := "Updated"
+		if result.Created {
+			action = "Created"
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("%s feature %q [%s]", action, result.Feature.ID, result.Feature.Status)), nil
 	}
 }
 

@@ -10,7 +10,9 @@ const docketSection = `## Feature Tracking (docket)
 
 This project uses ` + "`docket`" + ` for feature tracking. Dashboard: http://localhost:<port> (or run ` + "`/docket`" + `).
 
-Dispatch the ` + "`board-manager`" + ` agent (model: sonnet) at these points:
+**Small tasks** (cosmetic changes, one-off fixes, config tweaks): call ` + "`quick_track`" + ` MCP tool directly — one call, no agent dispatch needed. Pass title, commit_hash, and key_files.
+
+**Larger features** (multi-step, plan-driven, complex): dispatch the ` + "`board-manager`" + ` agent (model: sonnet) at these points:
 1. **Before writing any code for a new task** — if the user asks to build, fix, or add something, dispatch board-manager FIRST to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
 2. **After a commit** — pass commit hash, message, files, feature ID
 3. **After subagent implementation work** — subagent commits bypass PostToolUse hooks. After an implementer subagent returns with commits, dispatch board-manager with all new commit hashes, messages, and files. Don't wait for per-commit dispatches — batch them.

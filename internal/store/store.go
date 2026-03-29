@@ -381,6 +381,74 @@ func (s *Store) CompactSessions(featureID, summary string) (int, error) {
 	return len(ids), nil
 }
 
+type QuickTrackInput struct {
+	Title      string
+	CommitHash string
+	KeyFiles   []string
+	Status     string // default "done"
+}
+
+type QuickTrackResult struct {
+	Feature *Feature
+	Created bool // true if new, false if updated existing
+}
+
+func (s *Store) QuickTrack(input QuickTrackInput) (*QuickTrackResult, error) {
+	if input.Status == "" {
+		input.Status = "done"
+	}
+	id := slugify(input.Title)
+
+	existing, err := s.GetFeature(id)
+	created := false
+
+	if err != nil {
+		// Feature doesn't exist — create it
+		_, err = s.AddFeature(input.Title, "")
+		if err != nil {
+			return nil, fmt.Errorf("quick_track create: %w", err)
+		}
+		created = true
+	}
+
+	// Update status and key_files
+	u := FeatureUpdate{Status: &input.Status}
+	if len(input.KeyFiles) > 0 {
+		merged := input.KeyFiles
+		if existing != nil && len(existing.KeyFiles) > 0 {
+			seen := make(map[string]bool)
+			for _, f := range existing.KeyFiles {
+				seen[f] = true
+			}
+			merged = append([]string{}, existing.KeyFiles...)
+			for _, f := range input.KeyFiles {
+				if !seen[f] {
+					merged = append(merged, f)
+				}
+			}
+		}
+		u.KeyFiles = &merged
+	}
+	s.UpdateFeature(id, u)
+
+	// Log session with commit if provided
+	if input.CommitHash != "" {
+		s.LogSession(SessionInput{
+			FeatureID:  id,
+			Summary:    input.Title,
+			Commits:    []string{input.CommitHash},
+			AutoLinked: true,
+			LinkReason: "quick_track",
+		})
+	}
+
+	f, err := s.GetFeature(id)
+	if err != nil {
+		return nil, err
+	}
+	return &QuickTrackResult{Feature: f, Created: created}, nil
+}
+
 func (s *Store) GetContext(id string) (*FeatureContext, error) {
 	f, err := s.GetFeature(id)
 	if err != nil {
