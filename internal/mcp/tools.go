@@ -350,11 +350,37 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 			}
 		}
 
+		var allCommits []string
 		if len(fc.RecentSessions) > 0 {
 			b.WriteString("Recent sessions:\n")
 			for _, sess := range fc.RecentSessions {
 				fmt.Fprintf(&b, "  - %s: %s\n", sess.CreatedAt.Format("2006-01-02"), sess.Summary)
+				allCommits = append(allCommits, sess.Commits...)
 			}
+		}
+
+		// Collect commits from completed task items
+		subtasks, _ := s.GetSubtasksForFeature(id, false)
+		for _, st := range subtasks {
+			for _, item := range st.Items {
+				if item.CommitHash != "" {
+					allCommits = append(allCommits, item.CommitHash)
+				}
+			}
+		}
+
+		// Deduplicate and surface commits
+		if len(allCommits) > 0 {
+			seen := make(map[string]bool)
+			var unique []string
+			for _, c := range allCommits {
+				if !seen[c] {
+					seen[c] = true
+					unique = append(unique, c)
+				}
+			}
+			b.WriteString("Commits: " + strings.Join(unique, ", ") + "\n")
+			b.WriteString("Tip: run `git log --stat` on these commits to see which files this feature touches.\n")
 		}
 
 		return mcp.NewToolResultText(b.String()), nil
