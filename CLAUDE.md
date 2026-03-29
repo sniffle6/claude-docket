@@ -52,7 +52,7 @@ Both read/write the same SQLite database at `<project>/.docket/features.db`.
 This project uses `docket` for feature tracking. Dashboard: http://localhost:7890 (or run `/docket`).
 
 Dispatch the `board-manager` agent (model: sonnet) at these points:
-1. **Start of implementation work** — skip for questions/reviews/lookups
+1. **Before writing any code for a new task** — if the user asks to build, fix, or add something, dispatch board-manager FIRST to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
 2. **After a commit** — pass commit hash, message, files, feature ID
 
 Session logging is handled automatically by the Stop hook (no agent dispatch needed).
