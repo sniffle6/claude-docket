@@ -104,6 +104,11 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("titles", mcp.Required(), mcp.Description("Pipe-separated task item titles (e.g., 'Write tests|Implement handler|Update docs')")),
 	), addTaskItemsHandler(s))
 
+	srv.AddTool(mcp.NewTool("complete_task_items",
+		mcp.WithDescription("Batch-complete multiple task items in one call. More token-efficient than calling complete_task_item repeatedly. Each entry needs an ID and outcome; commit_hash and key_files are optional."),
+		mcp.WithString("items", mcp.Required(), mcp.Description("JSON array of completions: [{\"id\":\"1\",\"outcome\":\"done\"},{\"id\":\"2\",\"outcome\":\"skipped\",\"commit_hash\":\"abc\",\"key_files\":\"a.go,b.go\"}]")),
+	), completeTaskItemsHandler(s))
+
 	srv.AddTool(mcp.NewTool("get_full_context",
 		mcp.WithDescription("Get everything for a feature: all subtasks (including archived), all task items with outcomes and commits, all sessions. For subagent deep dives."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
@@ -438,6 +443,46 @@ func completeTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf("Task #%d done.", id)), nil
+	}
+}
+
+func completeTaskItemsHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		itemsJSON := args["items"].(string)
+
+		var entries []struct {
+			ID        string `json:"id"`
+			Outcome   string `json:"outcome"`
+			CommitHash string `json:"commit_hash"`
+			KeyFiles  string `json:"key_files"`
+		}
+		if err := json.Unmarshal([]byte(itemsJSON), &entries); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("invalid JSON: %v", err)), nil
+		}
+
+		var results []string
+		for _, e := range entries {
+			id := parseInt64(e.ID)
+			var keyFiles []string
+			if e.KeyFiles != "" {
+				for _, f := range strings.Split(e.KeyFiles, ",") {
+					keyFiles = append(keyFiles, strings.TrimSpace(f))
+				}
+			}
+
+			if err := s.CompleteTaskItem(id, store.TaskItemCompletion{
+				Outcome:    e.Outcome,
+				CommitHash: e.CommitHash,
+				KeyFiles:   keyFiles,
+			}); err != nil {
+				results = append(results, fmt.Sprintf("#%d: error: %s", id, err))
+				continue
+			}
+			results = append(results, fmt.Sprintf("#%d: done", id))
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Completed %d items: %s", len(entries), strings.Join(results, ", "))), nil
 	}
 }
 
