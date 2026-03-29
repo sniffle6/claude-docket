@@ -232,10 +232,15 @@ func getFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 
 		type fullFeature struct {
 			store.Feature
-			Subtasks []store.Subtask `json:"subtasks"`
-			Sessions []store.Session `json:"sessions"`
+			Subtasks  []store.Subtask  `json:"subtasks"`
+			Sessions  []store.Session  `json:"sessions"`
+			Decisions []store.Decision `json:"decisions"`
 		}
-		full := fullFeature{Feature: *f, Subtasks: subtasks, Sessions: sessions}
+		decisions, _ := s.GetDecisionsForFeature(id)
+		if decisions == nil {
+			decisions = []store.Decision{}
+		}
+		full := fullFeature{Feature: *f, Subtasks: subtasks, Sessions: sessions, Decisions: decisions}
 		data, _ := json.MarshalIndent(full, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
 	}
@@ -329,6 +334,19 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 			}
 			if nextTask != "" {
 				fmt.Fprintf(&b, "Next: %s\n", nextTask)
+			}
+		}
+
+		var rejected []store.Decision
+		for _, d := range fc.Decisions {
+			if d.Outcome == "rejected" {
+				rejected = append(rejected, d)
+			}
+		}
+		if len(rejected) > 0 {
+			b.WriteString("Rejected approaches:\n")
+			for _, d := range rejected {
+				fmt.Fprintf(&b, "  - %s — %s\n", d.Approach, d.Reason)
 			}
 		}
 
@@ -599,15 +617,20 @@ func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 		sessions, _ := s.GetSessionsForFeature(id)
 
 		type fullDump struct {
-			Feature  store.Feature   `json:"feature"`
-			Subtasks []store.Subtask `json:"subtasks"`
-			Sessions []store.Session `json:"sessions"`
+			Feature   store.Feature    `json:"feature"`
+			Subtasks  []store.Subtask  `json:"subtasks"`
+			Sessions  []store.Session  `json:"sessions"`
+			Decisions []store.Decision `json:"decisions"`
 		}
-
+		decisions, _ := s.GetDecisionsForFeature(id)
+		if decisions == nil {
+			decisions = []store.Decision{}
+		}
 		data, _ := json.MarshalIndent(fullDump{
-			Feature:  *f,
-			Subtasks: subtasks,
-			Sessions: sessions,
+			Feature:   *f,
+			Subtasks:  subtasks,
+			Sessions:  sessions,
+			Decisions: decisions,
 		}, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
 	}

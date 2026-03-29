@@ -37,8 +37,9 @@ type FeatureUpdate struct {
 }
 
 type FeatureContext struct {
-	Feature        Feature   `json:"feature"`
-	RecentSessions []Session `json:"recent_sessions"`
+	Feature        Feature    `json:"feature"`
+	RecentSessions []Session  `json:"recent_sessions"`
+	Decisions      []Decision `json:"decisions"`
 }
 
 var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
@@ -403,5 +404,13 @@ func (s *Store) GetContext(id string) (*FeatureContext, error) {
 		sessions = []Session{}
 	}
 
-	return &FeatureContext{Feature: *f, RecentSessions: sessions}, nil
+	decisions, err := s.GetDecisionsForFeature(id)
+	if err != nil {
+		return nil, err
+	}
+	if decisions == nil {
+		decisions = []Decision{}
+	}
+
+	return &FeatureContext{Feature: *f, RecentSessions: sessions, Decisions: decisions}, nil
 }
