@@ -67,6 +67,7 @@ func Open(projectDir string) (*Store, error) {
 	}
 
 	db.Exec("PRAGMA journal_mode=WAL")
+	db.Exec("PRAGMA busy_timeout=5000")
 	db.Exec("PRAGMA foreign_keys=ON")
 
 	if err := migrate(db); err != nil {

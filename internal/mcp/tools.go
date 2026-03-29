@@ -152,10 +152,13 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		title := args["title"].(string)
-		desc, _ := args["description"].(string)
-		status, _ := args["status"].(string)
-		notes, _ := args["notes"].(string)
+		title, ok := argString(args, "title")
+		if !ok || title == "" {
+			return mcp.NewToolResultError("missing required parameter: title"), nil
+		}
+		desc, _ := argString(args, "description")
+		status, _ := argString(args, "status")
+		notes, _ := argString(args, "notes")
 
 		f, err := s.AddFeature(title, desc)
 		if err != nil {
@@ -178,28 +181,31 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		id := args["id"].(string)
+		id, ok := argString(args, "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
 
 		u := store.FeatureUpdate{}
-		if v, ok := args["status"].(string); ok {
+		if v, ok := argString(args, "status"); ok {
 			u.Status = &v
 		}
-		if v, ok := args["title"].(string); ok {
+		if v, ok := argString(args, "title"); ok {
 			u.Title = &v
 		}
-		if v, ok := args["description"].(string); ok {
+		if v, ok := argString(args, "description"); ok {
 			u.Description = &v
 		}
-		if v, ok := args["left_off"].(string); ok {
+		if v, ok := argString(args, "left_off"); ok {
 			u.LeftOff = &v
 		}
-		if v, ok := args["notes"].(string); ok {
+		if v, ok := argString(args, "notes"); ok {
 			u.Notes = &v
 		}
-		if v, ok := args["worktree_path"].(string); ok {
+		if v, ok := argString(args, "worktree_path"); ok {
 			u.WorktreePath = &v
 		}
-		if v, ok := args["key_files"].(string); ok && v != "" {
+		if v, ok := argString(args, "key_files"); ok && v != "" {
 			files := strings.Split(v, ",")
 			for i := range files {
 				files[i] = strings.TrimSpace(files[i])
@@ -217,7 +223,7 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 
 func listFeaturesHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		status, _ := req.GetArguments()["status"].(string)
+		status, _ := argString(req.GetArguments(), "status")
 
 		features, err := s.ListFeatures(status)
 		if err != nil {
@@ -246,7 +252,10 @@ func listFeaturesHandler(s *store.Store) server.ToolHandlerFunc {
 
 func getFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id := req.GetArguments()["id"].(string)
+		id, ok := argString(req.GetArguments(), "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
 
 		f, err := s.GetFeature(id)
 		if err != nil {
@@ -275,22 +284,28 @@ func getFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 func logSessionHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		summary := args["summary"].(string)
-		featureID := args["feature_id"].(string)
+		summary, ok := argString(args, "summary")
+		if !ok || summary == "" {
+			return mcp.NewToolResultError("missing required parameter: summary"), nil
+		}
+		featureID, ok := argString(args, "feature_id")
+		if !ok || featureID == "" {
+			return mcp.NewToolResultError("missing required parameter: feature_id"), nil
+		}
 
 		if _, err := s.GetFeature(featureID); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("feature not found: %s", featureID)), nil
 		}
 
 		var filesTouched []string
-		if v, ok := args["files_touched"].(string); ok && v != "" {
+		if v, ok := argString(args, "files_touched"); ok && v != "" {
 			for _, f := range strings.Split(v, ",") {
 				filesTouched = append(filesTouched, strings.TrimSpace(f))
 			}
 		}
 
 		var commits []string
-		if v, ok := args["commits"].(string); ok && v != "" {
+		if v, ok := argString(args, "commits"); ok && v != "" {
 			for _, c := range strings.Split(v, ",") {
 				commits = append(commits, strings.TrimSpace(c))
 			}
@@ -314,7 +329,10 @@ func logSessionHandler(s *store.Store) server.ToolHandlerFunc {
 
 func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id := req.GetArguments()["id"].(string)
+		id, ok := argString(req.GetArguments(), "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
 
 		fc, err := s.GetContext(id)
 		if err != nil {
@@ -443,8 +461,14 @@ func getReadyHandler(s *store.Store) server.ToolHandlerFunc {
 func compactSessionsHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		id := args["id"].(string)
-		summary := args["summary"].(string)
+		id, ok := argString(args, "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
+		summary, ok := argString(args, "summary")
+		if !ok || summary == "" {
+			return mcp.NewToolResultError("missing required parameter: summary"), nil
+		}
 
 		n, err := s.CompactSessions(id, summary)
 		if err != nil {
@@ -462,8 +486,14 @@ func compactSessionsHandler(s *store.Store) server.ToolHandlerFunc {
 func importPlanHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		id := args["id"].(string)
-		planPath := args["plan_path"].(string)
+		id, ok := argString(args, "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
+		planPath, ok := argString(args, "plan_path")
+		if !ok || planPath == "" {
+			return mcp.NewToolResultError("missing required parameter: plan_path"), nil
+		}
 
 		result, err := s.ImportPlan(id, planPath)
 		if err != nil {
@@ -486,12 +516,19 @@ func importPlanHandler(s *store.Store) server.ToolHandlerFunc {
 func completeTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		id := parseInt64(args["id"].(string))
-		outcome := args["outcome"].(string)
-		commitHash, _ := args["commit_hash"].(string)
+		idStr, ok := argString(args, "id")
+		if !ok || idStr == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
+		id := parseInt64(idStr)
+		outcome, ok := argString(args, "outcome")
+		if !ok || outcome == "" {
+			return mcp.NewToolResultError("missing required parameter: outcome"), nil
+		}
+		commitHash, _ := argString(args, "commit_hash")
 
 		var keyFiles []string
-		if v, ok := args["key_files"].(string); ok && v != "" {
+		if v, ok := argString(args, "key_files"); ok && v != "" {
 			for _, f := range strings.Split(v, ",") {
 				keyFiles = append(keyFiles, strings.TrimSpace(f))
 			}
@@ -527,7 +564,10 @@ func completeTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
 func completeTaskItemsHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		itemsJSON := args["items"].(string)
+		itemsJSON, ok := argString(args, "items")
+		if !ok || itemsJSON == "" {
+			return mcp.NewToolResultError("missing required parameter: items"), nil
+		}
 
 		var entries []struct {
 			ID        string `json:"id"`
@@ -567,8 +607,14 @@ func completeTaskItemsHandler(s *store.Store) server.ToolHandlerFunc {
 func addSubtaskHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		featureID := args["feature_id"].(string)
-		title := args["title"].(string)
+		featureID, ok := argString(args, "feature_id")
+		if !ok || featureID == "" {
+			return mcp.NewToolResultError("missing required parameter: feature_id"), nil
+		}
+		title, ok := argString(args, "title")
+		if !ok || title == "" {
+			return mcp.NewToolResultError("missing required parameter: title"), nil
+		}
 
 		subtasks, _ := s.GetSubtasksForFeature(featureID, false)
 		position := len(subtasks) + 1
@@ -585,8 +631,15 @@ func addSubtaskHandler(s *store.Store) server.ToolHandlerFunc {
 func addTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		subtaskID := parseInt64(args["subtask_id"].(string))
-		title := args["title"].(string)
+		subtaskIDStr, ok := argString(args, "subtask_id")
+		if !ok || subtaskIDStr == "" {
+			return mcp.NewToolResultError("missing required parameter: subtask_id"), nil
+		}
+		subtaskID := parseInt64(subtaskIDStr)
+		title, ok := argString(args, "title")
+		if !ok || title == "" {
+			return mcp.NewToolResultError("missing required parameter: title"), nil
+		}
 
 		items, _ := s.GetTaskItemsForSubtask(subtaskID)
 		position := len(items) + 1
@@ -603,8 +656,14 @@ func addTaskItemHandler(s *store.Store) server.ToolHandlerFunc {
 func addSubtasksHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		featureID := args["feature_id"].(string)
-		titlesRaw := args["titles"].(string)
+		featureID, ok := argString(args, "feature_id")
+		if !ok || featureID == "" {
+			return mcp.NewToolResultError("missing required parameter: feature_id"), nil
+		}
+		titlesRaw, ok := argString(args, "titles")
+		if !ok || titlesRaw == "" {
+			return mcp.NewToolResultError("missing required parameter: titles"), nil
+		}
 
 		titles := strings.Split(titlesRaw, "|")
 		subtasks, _ := s.GetSubtasksForFeature(featureID, false)
@@ -631,8 +690,15 @@ func addSubtasksHandler(s *store.Store) server.ToolHandlerFunc {
 func addTaskItemsHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		subtaskID := parseInt64(args["subtask_id"].(string))
-		titlesRaw := args["titles"].(string)
+		subtaskIDStr, ok := argString(args, "subtask_id")
+		if !ok || subtaskIDStr == "" {
+			return mcp.NewToolResultError("missing required parameter: subtask_id"), nil
+		}
+		subtaskID := parseInt64(subtaskIDStr)
+		titlesRaw, ok := argString(args, "titles")
+		if !ok || titlesRaw == "" {
+			return mcp.NewToolResultError("missing required parameter: titles"), nil
+		}
 
 		titles := strings.Split(titlesRaw, "|")
 		items, _ := s.GetTaskItemsForSubtask(subtaskID)
@@ -658,7 +724,10 @@ func addTaskItemsHandler(s *store.Store) server.ToolHandlerFunc {
 
 func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id := req.GetArguments()["id"].(string)
+		id, ok := argString(req.GetArguments(), "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
 
 		f, err := s.GetFeature(id)
 		if err != nil {
@@ -691,16 +760,19 @@ func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 func quickTrackHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		title := args["title"].(string)
+		title, ok := argString(args, "title")
+		if !ok || title == "" {
+			return mcp.NewToolResultError("missing required parameter: title"), nil
+		}
 
 		input := store.QuickTrackInput{Title: title}
-		if v, ok := args["commit_hash"].(string); ok && v != "" {
+		if v, ok := argString(args, "commit_hash"); ok && v != "" {
 			input.CommitHash = v
 		}
-		if v, ok := args["status"].(string); ok && v != "" {
+		if v, ok := argString(args, "status"); ok && v != "" {
 			input.Status = v
 		}
-		if v, ok := args["key_files"].(string); ok && v != "" {
+		if v, ok := argString(args, "key_files"); ok && v != "" {
 			for _, f := range strings.Split(v, ",") {
 				input.KeyFiles = append(input.KeyFiles, strings.TrimSpace(f))
 			}
@@ -722,11 +794,17 @@ func quickTrackHandler(s *store.Store) server.ToolHandlerFunc {
 func addIssueHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		featureID := args["feature_id"].(string)
-		description := args["description"].(string)
+		featureID, ok := argString(args, "feature_id")
+		if !ok || featureID == "" {
+			return mcp.NewToolResultError("missing required parameter: feature_id"), nil
+		}
+		description, ok := argString(args, "description")
+		if !ok || description == "" {
+			return mcp.NewToolResultError("missing required parameter: description"), nil
+		}
 
 		var taskItemID *int64
-		if v, ok := args["task_item_id"].(string); ok && v != "" {
+		if v, ok := argString(args, "task_item_id"); ok && v != "" {
 			id := parseInt64(v)
 			taskItemID = &id
 		}
@@ -747,8 +825,12 @@ func addIssueHandler(s *store.Store) server.ToolHandlerFunc {
 func resolveIssueHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		id := parseInt64(args["id"].(string))
-		commitHash, _ := args["commit_hash"].(string)
+		idStr, ok := argString(args, "id")
+		if !ok || idStr == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
+		id := parseInt64(idStr)
+		commitHash, _ := argString(args, "commit_hash")
 
 		if err := s.ResolveIssue(id, commitHash); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -764,7 +846,7 @@ func resolveIssueHandler(s *store.Store) server.ToolHandlerFunc {
 
 func listIssuesHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		featureID, _ := req.GetArguments()["feature_id"].(string)
+		featureID, _ := argString(req.GetArguments(), "feature_id")
 
 		var issues []store.Issue
 		var err error
@@ -800,10 +882,22 @@ func listIssuesHandler(s *store.Store) server.ToolHandlerFunc {
 func addDecisionHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
-		featureID := args["feature_id"].(string)
-		approach := args["approach"].(string)
-		outcome := args["outcome"].(string)
-		reason := args["reason"].(string)
+		featureID, ok := argString(args, "feature_id")
+		if !ok || featureID == "" {
+			return mcp.NewToolResultError("missing required parameter: feature_id"), nil
+		}
+		approach, ok := argString(args, "approach")
+		if !ok || approach == "" {
+			return mcp.NewToolResultError("missing required parameter: approach"), nil
+		}
+		outcome, ok := argString(args, "outcome")
+		if !ok || outcome == "" {
+			return mcp.NewToolResultError("missing required parameter: outcome"), nil
+		}
+		reason, ok := argString(args, "reason")
+		if !ok || reason == "" {
+			return mcp.NewToolResultError("missing required parameter: reason"), nil
+		}
 
 		if outcome != "accepted" && outcome != "rejected" {
 			return mcp.NewToolResultError("outcome must be 'accepted' or 'rejected'"), nil
@@ -822,4 +916,22 @@ func parseInt64(s string) int64 {
 	var n int64
 	fmt.Sscanf(s, "%d", &n)
 	return n
+}
+
+// argString safely extracts a string argument, handling nil and non-string types
+// without panicking. Returns empty string and false if missing or wrong type.
+func argString(args map[string]interface{}, key string) (string, bool) {
+	v, ok := args[key]
+	if !ok || v == nil {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		// Handle numeric values sent as float64 (JSON numbers)
+		if f, ok := v.(float64); ok {
+			return fmt.Sprintf("%d", int64(f)), true
+		}
+		return fmt.Sprintf("%v", v), true
+	}
+	return s, true
 }
