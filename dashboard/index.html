@@ -402,7 +402,7 @@
 </head>
 <body>
 <header>
-  <h1>docket</h1>
+  <h1>docket <span id="projectName" style="color:var(--muted);font-weight:400;font-size:16px;"></span></h1>
   <div class="header-right">
     <span class="unlinked-badge" id="unlinkedBadge" onclick="showUnlinked()">0 unlinked sessions</span>
     <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle dark/light mode"></button>
@@ -808,7 +808,18 @@ function esc(s) {
   return d.innerHTML;
 }
 
+async function loadProject() {
+  try {
+    var res = await fetch(API + '/api/project');
+    var data = await res.json();
+    var name = data.name || 'docket';
+    document.title = 'docket — ' + name;
+    document.getElementById('projectName').textContent = name;
+  } catch(e) {}
+}
+
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePanel(); });
+loadProject();
 load();
 setInterval(function() {
   load();

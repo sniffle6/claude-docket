@@ -150,6 +150,14 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		writeJSON(w, map[string]string{"ok": "true"})
 	})
 
+	mux.HandleFunc("GET /api/project", func(w http.ResponseWriter, r *http.Request) {
+		name := "docket"
+		if devDir != "" {
+			name = filepath.Base(devDir)
+		}
+		writeJSON(w, map[string]string{"name": name})
+	})
+
 	// Serve dashboard HTML — prefer local file on disk for dev, fall back to embedded
 	if static != nil {
 		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
