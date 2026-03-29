@@ -269,6 +269,17 @@
   .badge-dev_complete, .badge-dev-complete { background: #FFD16620; color: var(--yellow); }
   .badge-done { background: #95E06C20; color: var(--done); }
 
+  .type-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    border: 1px solid var(--muted);
+    color: var(--muted);
+    margin-left: 6px;
+    text-transform: lowercase;
+    letter-spacing: 0.3px;
+  }
+
   .panel-description {
     font-size: 14px;
     color: var(--secondary);
@@ -673,6 +684,12 @@ async function showDetail(id) {
   badge.className = 'status-badge badge-' + f.status;
   badge.textContent = STATUS_LABELS[f.status] || f.status;
   slugDiv.appendChild(badge);
+  if (f.type) {
+    var typeBadge = document.createElement('span');
+    typeBadge.className = 'type-badge';
+    typeBadge.textContent = f.type;
+    slugDiv.appendChild(typeBadge);
+  }
   panel.appendChild(slugDiv);
 
   // Description

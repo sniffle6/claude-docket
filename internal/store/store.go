@@ -18,6 +18,7 @@ type Feature struct {
 	Title        string    `json:"title"`
 	Description  string    `json:"description"`
 	Status       string    `json:"status"`
+	Type         string    `json:"type"`
 	LeftOff      string    `json:"left_off"`
 	Notes        string    `json:"notes"`
 	KeyFiles     []string  `json:"key_files"`
@@ -30,10 +31,13 @@ type FeatureUpdate struct {
 	Title        *string   `json:"title,omitempty"`
 	Description  *string   `json:"description,omitempty"`
 	Status       *string   `json:"status,omitempty"`
+	Type         *string   `json:"type,omitempty"`
 	LeftOff      *string   `json:"left_off,omitempty"`
 	Notes        *string   `json:"notes,omitempty"`
 	KeyFiles     *[]string `json:"key_files,omitempty"`
 	WorktreePath *string   `json:"worktree_path,omitempty"`
+	Force        *bool     `json:"force,omitempty"`
+	ForceReason  *string   `json:"force_reason,omitempty"`
 }
 
 type FeatureContext struct {
@@ -97,12 +101,12 @@ func (s *Store) AddFeature(title, description string) (*Feature, error) {
 
 func (s *Store) GetFeature(id string) (*Feature, error) {
 	row := s.db.QueryRow(
-		`SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
+		`SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
 		id,
 	)
 	var f Feature
 	var keyFilesJSON string
-	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
+	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get feature %q: %w", id, err)
 	}
@@ -114,6 +118,26 @@ func (s *Store) GetFeature(id string) (*Feature, error) {
 }
 
 func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
+	// Completion gate: check prerequisites before allowing status=done
+	if u.Status != nil && *u.Status == "done" {
+		done, total, _ := s.GetFeatureProgress(id)
+		unchecked := total - done
+		openIssues, _ := s.GetOpenIssueCount(id)
+
+		if (unchecked > 0 || openIssues > 0) && (u.Force == nil || !*u.Force) {
+			return fmt.Errorf("cannot mark feature %q as done: %d unchecked task items, %d open issues (use force=true to override)", id, unchecked, openIssues)
+		}
+
+		if (unchecked > 0 || openIssues > 0) && u.Force != nil && *u.Force {
+			reason := "No reason given"
+			if u.ForceReason != nil && *u.ForceReason != "" {
+				reason = *u.ForceReason
+			}
+			approach := fmt.Sprintf("Force-completed with %d unchecked items, %d open issues", unchecked, openIssues)
+			s.AddDecision(id, approach, "accepted", reason)
+		}
+	}
+
 	sets := []string{}
 	args := []any{}
 	if u.Title != nil {
@@ -127,6 +151,10 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 	if u.Status != nil {
 		sets = append(sets, "status = ?")
 		args = append(args, *u.Status)
+	}
+	if u.Type != nil {
+		sets = append(sets, "type = ?")
+		args = append(args, *u.Type)
 	}
 	if u.LeftOff != nil {
 		sets = append(sets, "left_off = ?")
@@ -164,7 +192,7 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 }
 
 func (s *Store) ListFeatures(status string) ([]Feature, error) {
-	query := `SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features`
+	query := `SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features`
 	var args []any
 	if status != "" {
 		query += " WHERE status = ?"
@@ -180,7 +208,7 @@ func (s *Store) ListFeatures(status string) ([]Feature, error) {
 	for rows.Next() {
 		var f Feature
 		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
@@ -305,7 +333,7 @@ func scanSessions(rows *sql.Rows) ([]Session, error) {
 
 func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, description, status, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
+		`SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get ready features: %w", err)
@@ -315,7 +343,7 @@ func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	for rows.Next() {
 		var f Feature
 		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)

@@ -19,6 +19,7 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("description", mcp.Description("What the feature is")),
 		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked, dev_complete")),
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude to read when picking up this feature")),
+		mcp.WithString("type", mcp.Description("Feature type: feature, bugfix, chore, spike. Auto-creates subtasks from template when set.")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
@@ -31,6 +32,8 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude")),
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
 		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
+		mcp.WithBoolean("force", mcp.Description("Force status=done even with unchecked task items or open issues. Logs a decision.")),
+		mcp.WithString("force_reason", mcp.Description("Reason for force-completing (logged as a decision)")),
 	), updateFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
@@ -159,6 +162,7 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		desc, _ := argString(args, "description")
 		status, _ := argString(args, "status")
 		notes, _ := argString(args, "notes")
+		typ, _ := argString(args, "type")
 
 		f, err := s.AddFeature(title, desc)
 		if err != nil {
@@ -170,6 +174,12 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if notes != "" {
 			s.UpdateFeature(f.ID, store.FeatureUpdate{Notes: &notes})
+		}
+		if typ != "" {
+			if err := s.ApplyTemplate(f.ID, typ); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("feature created but template failed: %v", err)), nil
+			}
+			s.UpdateFeature(f.ID, store.FeatureUpdate{Type: &typ})
 		}
 		f, _ = s.GetFeature(f.ID)
 
@@ -211,6 +221,15 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 				files[i] = strings.TrimSpace(files[i])
 			}
 			u.KeyFiles = &files
+		}
+		if v, ok := args["force"]; ok {
+			if b, ok := v.(bool); ok && b {
+				force := true
+				u.Force = &force
+			}
+		}
+		if v, ok := argString(args, "force_reason"); ok && v != "" {
+			u.ForceReason = &v
 		}
 
 		if err := s.UpdateFeature(id, u); err != nil {

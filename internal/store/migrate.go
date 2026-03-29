@@ -84,6 +84,10 @@ CREATE TABLE IF NOT EXISTS issues (
 );
 `
 
+const schemaV7 = `
+ALTER TABLE features ADD COLUMN type TEXT NOT NULL DEFAULT '';
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -98,5 +102,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV5)
 	// v6: add issues table (ignore error if already exists)
 	db.Exec(schemaV6)
+	// v7: add type column to features (ignore error if already exists)
+	db.Exec(schemaV7)
 	return nil
 }
