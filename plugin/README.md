@@ -4,9 +4,11 @@ Claude Code plugin for the docket feature tracker.
 
 ## What it provides
 
-- **board-manager agent** — autonomous agent that handles all docket board operations (create features, update status, log sessions, auto-compact)
+- **board-manager agent** — autonomous agent that creates features, updates status, completes tasks, and enriches handoff files
 - **/docket skill** — opens the docket dashboard in the default browser
+- **/docket-init skill** — initializes docket in a new project
 - **MCP server** — connects Claude Code to the docket binary for feature tracking tools
+- **Hooks** — SessionStart (context injection + handoff files), PostToolUse (commit tracking + auto plan import), Stop (session logging + handoff generation)
 
 ## Setup
 
@@ -18,11 +20,12 @@ Add this to your project's CLAUDE.md:
 
     ## Feature Tracking (docket)
 
-    This project uses `docket` for feature tracking. Run `/docket` to open the dashboard.
+    This project uses `docket` for feature tracking. Dashboard: http://localhost:<port> (or run `/docket`).
 
     Dispatch the `board-manager` agent (model: sonnet) at these points:
-    1. **Start of implementation work** — skip for questions/reviews/lookups
+    1. **Before writing any code for a new task** — if the user asks to build, fix, or add something, dispatch board-manager FIRST to create or find a feature card. Do not write code until the card exists. Skip only for questions, reviews, and lookups.
     2. **After a commit** — pass commit hash, message, files, feature ID
-    3. **Session ending** — pass summary, commits, files, feature ID
+
+    Session logging is handled automatically by the Stop hook (no agent dispatch needed).
 
     Carry the feature ID the agent returns across dispatches. `get_ready` stays in main session.
