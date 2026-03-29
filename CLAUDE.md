@@ -26,11 +26,16 @@ Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.clau
 
 - `cmd/docket/main.go` — entry point (serve, init, version commands)
 - `internal/mcp/server.go` — MCP server setup
-- `internal/mcp/tools.go` — MCP tool implementations
+- `internal/mcp/tools.go` — MCP tool registration (18 tools)
+- `internal/mcp/tools_feature.go` — feature CRUD, context, quick track handlers
+- `internal/mcp/tools_session.go` — log session, compact sessions handlers
+- `internal/mcp/tools_subtask.go` — import plan, subtask/task item handlers
+- `internal/mcp/tools_issue.go` — issue and decision handlers
 - `internal/store/store.go` — SQLite data layer, Feature/Session structs
 - `internal/store/migrate.go` — schema migrations
 - `internal/store/decision.go` — decision log operations
 - `internal/store/subtask.go` — subtask/task item operations
+- `internal/store/templates.go` — feature type templates (feature/bugfix/chore/spike)
 - `internal/store/import.go` — plan file parser
 - `internal/dashboard/dashboard.go` — HTTP handler for web UI
 - `dashboard/index.html` — frontend (embedded in binary)
@@ -55,9 +60,18 @@ Both read/write the same SQLite database at `<project>/.docket/features.db`.
 
 - `datetime('now')` has second-level precision — use `ORDER BY id DESC` not `ORDER BY created_at DESC` when insertion order matters within the same second.
 
+## Hook / MCP IPC
+
+- `log_session` MCP handler writes `.docket/session-logged` sentinel file. Stop hook checks for it to avoid double-logging. Cleared after each stop cycle.
+- `commits.log` is written by PostToolUse hook, read by Stop hook. Cleared after handoff.
+
 ## Adding Schema Migrations
 
 Add a new `const schemaVN` in `migrate.go`, then `db.Exec(schemaVN)` in `migrate()`. Use `CREATE TABLE IF NOT EXISTS` or `ALTER TABLE` — errors are ignored for idempotency. No version tracking table.
+
+## Completion Gate
+
+`UpdateFeature` blocks `status=done` if unchecked task items or open issues exist. Pass `Force: true` + `ForceReason` to override (auto-logs a decision). Features with no subtasks pass the gate.
 
 ## Test Pattern
 
