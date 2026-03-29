@@ -162,23 +162,37 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		writeJSON(w, map[string]string{"name": name})
 	})
 
-	// Serve dashboard HTML — prefer local file on disk for dev, fall back to embedded
+	// Serve dashboard files — prefer local files on disk for dev, fall back to embedded
 	if static != nil {
+		fileServer := http.FileServerFS(static)
 		mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/" {
-				http.FileServerFS(static).ServeHTTP(w, r)
-				return
-			}
-			devPath := "dashboard/index.html"
+			// Dev mode: try serving from disk first (any file, not just index.html)
+			dashDir := "dashboard"
 			if devDir != "" {
-				devPath = filepath.Join(devDir, "dashboard", "index.html")
+				dashDir = filepath.Join(devDir, "dashboard")
 			}
-			if devHTML, err := os.ReadFile(devPath); err == nil {
-				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				w.Write(devHTML)
+			relPath := r.URL.Path
+			if relPath == "/" {
+				relPath = "/index.html"
+			}
+			devPath := filepath.Join(dashDir, filepath.Clean(relPath))
+			if data, err := os.ReadFile(devPath); err == nil {
+				switch filepath.Ext(devPath) {
+				case ".html":
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				case ".png":
+					w.Header().Set("Content-Type", "image/png")
+				case ".svg":
+					w.Header().Set("Content-Type", "image/svg+xml")
+				case ".css":
+					w.Header().Set("Content-Type", "text/css")
+				case ".js":
+					w.Header().Set("Content-Type", "application/javascript")
+				}
+				w.Write(data)
 				return
 			}
-			http.FileServerFS(static).ServeHTTP(w, r)
+			fileServer.ServeHTTP(w, r)
 		})
 	}
 
