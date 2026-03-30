@@ -75,6 +75,11 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	}
 	defer s.Close()
 
+	// Auto-archive features done >7 days
+	if archived, err := s.AutoArchiveStale(); err == nil && len(archived) > 0 {
+		fmt.Fprintf(os.Stderr, "[docket] Auto-archived %d features: %s\n", len(archived), strings.Join(archived, ", "))
+	}
+
 	// Create/clear commits.log
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.WriteFile(commitsPath, []byte{}, 0644)

@@ -659,6 +659,43 @@ func TestPostToolUseAutoImportsPlan(t *testing.T) {
 	}
 }
 
+func TestSessionStartAutoArchives(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a done feature backdated 8 days
+	s.AddFeature("Old Done Feature", "")
+	done := "done"
+	s.UpdateFeature("old-done-feature", store.FeatureUpdate{Status: &done})
+	s.DB().Exec(`UPDATE features SET updated_at = datetime('now', '-8 days') WHERE id = 'old-done-feature'`)
+
+	// Create an active feature
+	s.AddFeature("Active Feature", "")
+	ip := "in_progress"
+	s.UpdateFeature("active-feature", store.FeatureUpdate{Status: &ip})
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+
+	var buf bytes.Buffer
+	handleSessionStart(h, &buf)
+
+	// Verify old feature was archived
+	s2, _ := store.Open(dir)
+	defer s2.Close()
+	f, _ := s2.GetFeature("old-done-feature")
+	if f.Status != "archived" {
+		t.Fatalf("expected archived, got %q", f.Status)
+	}
+}
+
 func TestIsPlanFile(t *testing.T) {
 	tests := []struct {
 		path string

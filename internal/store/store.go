@@ -90,6 +90,31 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
+func (s *Store) DB() *sql.DB {
+	return s.db
+}
+
+func (s *Store) AutoArchiveStale() ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM features WHERE status = 'done' AND updated_at < datetime('now', '-7 days')`)
+	if err != nil {
+		return nil, fmt.Errorf("query stale features: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		rows.Scan(&id)
+		ids = append(ids, id)
+	}
+
+	archived := "archived"
+	for _, id := range ids {
+		s.UpdateFeature(id, FeatureUpdate{Status: &archived})
+	}
+	return ids, nil
+}
+
 // MarkSessionLogged writes a sentinel file so the Stop hook knows
 // log_session was called (avoids complex commit-matching logic).
 func (s *Store) MarkSessionLogged() {
