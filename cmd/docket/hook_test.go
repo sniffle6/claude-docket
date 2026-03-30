@@ -932,3 +932,61 @@ func TestPreToolUseFeatureWithTaskItems(t *testing.T) {
 		t.Error("sentinel should NOT be written when feature has task items")
 	}
 }
+
+func TestPreToolUseSentinelPreventsReNudge(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Write the sentinel (simulating a prior nudge)
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	os.WriteFile(sentinel, []byte{}, 0644)
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.SystemMessage != "" {
+		t.Errorf("expected no nudge when sentinel exists, got: %s", out.SystemMessage)
+	}
+}
+
+func TestSessionStartClearsSentinel(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Write a sentinel from a prior session
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	os.WriteFile(sentinel, []byte{}, 0644)
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+
+	var buf bytes.Buffer
+	handleSessionStart(h, &buf)
+
+	// Verify sentinel was cleared
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Error("expected agent-nudged sentinel to be cleared on SessionStart")
+	}
+}
