@@ -88,6 +88,10 @@ const schemaV7 = `
 ALTER TABLE features ADD COLUMN type TEXT NOT NULL DEFAULT '';
 `
 
+const schemaV8 = `
+ALTER TABLE features ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -104,5 +108,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV6)
 	// v7: add type column to features (ignore error if already exists)
 	db.Exec(schemaV7)
+	// v8: add tags column to features (ignore error if already exists)
+	db.Exec(schemaV8)
 	return nil
 }
