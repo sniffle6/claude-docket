@@ -41,10 +41,27 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			}
 			s.UpdateFeature(f.ID, store.FeatureUpdate{Type: &typ})
 		}
+		var tagWarning string
+		if tagStr, ok := argString(args, "tags"); ok && tagStr != "" {
+			tags := strings.Split(tagStr, ",")
+			for i := range tags {
+				tags[i] = strings.TrimSpace(tags[i])
+			}
+			s.UpdateFeature(f.ID, store.FeatureUpdate{Tags: &tags})
+			newTags := s.CheckNewTags(tags)
+			if len(newTags) > 0 {
+				known, _ := s.GetKnownTags()
+				tagWarning = fmt.Sprintf("\nNote: new tag(s) %q added. Existing tags: %s", strings.Join(newTags, ", "), strings.Join(known, ", "))
+			}
+		}
 		f, _ = s.GetFeature(f.ID)
 
 		data, _ := json.MarshalIndent(f, "", "  ")
-		return mcp.NewToolResultText(string(data)), nil
+		result := string(data)
+		if tagWarning != "" {
+			result += tagWarning
+		}
+		return mcp.NewToolResultText(result), nil
 	}
 }
 
@@ -82,6 +99,13 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			}
 			u.KeyFiles = &files
 		}
+		if v, ok := argString(args, "tags"); ok {
+			tags := strings.Split(v, ",")
+			for i := range tags {
+				tags[i] = strings.TrimSpace(tags[i])
+			}
+			u.Tags = &tags
+		}
 		if v, ok := args["force"]; ok {
 			if b, ok := v.(bool); ok && b {
 				force := true
@@ -96,15 +120,31 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		return mcp.NewToolResultText(fmt.Sprintf("Updated feature %q", id)), nil
+		msg := fmt.Sprintf("Updated feature %q", id)
+		if u.Tags != nil {
+			newTags := s.CheckNewTags(*u.Tags)
+			if len(newTags) > 0 {
+				known, _ := s.GetKnownTags()
+				msg += fmt.Sprintf("\nNote: new tag(s) %q added. Existing tags: %s", strings.Join(newTags, ", "), strings.Join(known, ", "))
+			}
+		}
+		return mcp.NewToolResultText(msg), nil
 	}
 }
 
 func listFeaturesHandler(s *store.Store) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		status, _ := argString(req.GetArguments(), "status")
+		args := req.GetArguments()
+		status, _ := argString(args, "status")
+		tag, _ := argString(args, "tag")
 
-		features, err := s.ListFeatures(status)
+		var features []store.Feature
+		var err error
+		if tag != "" {
+			features, err = s.ListFeaturesWithTag(status, tag)
+		} else {
+			features, err = s.ListFeatures(status)
+		}
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
@@ -116,6 +156,9 @@ func listFeaturesHandler(s *store.Store) server.ToolHandlerFunc {
 		var lines []string
 		for _, f := range features {
 			line := fmt.Sprintf("- **%s** [%s] %s", f.ID, f.Status, f.Title)
+			if len(f.Tags) > 0 {
+				line += fmt.Sprintf(" {%s}", strings.Join(f.Tags, ", "))
+			}
 			if f.LeftOff != "" {
 				snippet := f.LeftOff
 				if len(snippet) > 60 {

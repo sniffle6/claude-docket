@@ -17,6 +17,7 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked, dev_complete")),
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude to read when picking up this feature")),
 		mcp.WithString("type", mcp.Description("Feature type: feature, bugfix, chore, spike. Auto-creates subtasks from template when set.")),
+		mcp.WithString("tags", mcp.Description("Comma-separated tags (e.g., 'auth,frontend'). New tags trigger a warning listing existing tags.")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
@@ -29,13 +30,15 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude")),
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
 		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
+		mcp.WithString("tags", mcp.Description("Comma-separated tags — replaces all existing tags. New tags trigger a warning.")),
 		mcp.WithBoolean("force", mcp.Description("Force status=done even with unchecked task items or open issues. Logs a decision.")),
 		mcp.WithString("force_reason", mcp.Description("Reason for force-completing (logged as a decision)")),
 	), updateFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
-		mcp.WithDescription("List all features. Returns compact summaries: ID, title, status, left_off snippet. Filter by status optionally."),
-		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked, dev_complete. Omit for all.")),
+		mcp.WithDescription("List features. Returns compact summaries: ID, title, status, tags, left_off snippet. Excludes archived by default."),
+		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked, dev_complete, archived. Omit for all (excluding archived).")),
+		mcp.WithString("tag", mcp.Description("Filter to features with this tag. Combines with status filter.")),
 	), listFeaturesHandler(s))
 
 	srv.AddTool(mcp.NewTool("get_feature",
