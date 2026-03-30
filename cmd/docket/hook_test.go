@@ -802,3 +802,42 @@ func TestPostToolUseRecordsCommit(t *testing.T) {
 		t.Errorf("expected feature ID in message, got: %s", out.SystemMessage)
 	}
 }
+
+func TestPreToolUseNoFeatures(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.HookSpecificOutput == nil || out.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Error("expected permissionDecision=allow")
+	}
+	if !strings.Contains(out.SystemMessage, "No active docket feature") {
+		t.Errorf("expected nudge message, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "get_ready") {
+		t.Errorf("expected get_ready instruction, got: %s", out.SystemMessage)
+	}
+
+	// Verify sentinel was written
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	if _, err := os.Stat(sentinel); os.IsNotExist(err) {
+		t.Error("expected agent-nudged sentinel to be created")
+	}
+}

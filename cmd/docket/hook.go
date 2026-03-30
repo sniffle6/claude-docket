@@ -35,6 +35,15 @@ type stopHookOutput struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+type preToolUseOutput struct {
+	HookSpecificOutput *preToolUseDecision `json:"hookSpecificOutput,omitempty"`
+	SystemMessage      string              `json:"systemMessage,omitempty"`
+}
+
+type preToolUseDecision struct {
+	PermissionDecision string `json:"permissionDecision"`
+}
+
 func runHook() {
 	var h hookInput
 	if err := json.NewDecoder(os.Stdin).Decode(&h); err != nil {
@@ -55,6 +64,8 @@ func runHook() {
 	}
 
 	switch h.HookEventName {
+	case "PreToolUse":
+		handlePreToolUse(&h, os.Stdout)
 	case "SessionStart":
 		handleSessionStart(&h, os.Stdout)
 	case "PostToolUse":
@@ -84,6 +95,10 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	// Create/clear commits.log
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.WriteFile(commitsPath, []byte{}, 0644)
+
+	// Clear agent-nudged sentinel for new session
+	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
+	os.Remove(sentinelPath)
 
 	features, err := s.ListFeatures("in_progress")
 	if err != nil {
@@ -246,6 +261,59 @@ Then call update_feature to set left_off to a brief note about where things stan
 
 	// No active feature or no commits — allow stop
 	json.NewEncoder(w).Encode(stopHookOutput{})
+}
+
+func handlePreToolUse(h *hookInput, w io.Writer) {
+	allow := preToolUseOutput{
+		HookSpecificOutput: &preToolUseDecision{PermissionDecision: "allow"},
+	}
+
+	// Check sentinel — already nudged this session
+	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
+	if _, err := os.Stat(sentinelPath); err == nil {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	s, err := store.Open(h.CWD)
+	if err != nil {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+	defer s.Close()
+
+	features, err := s.ListFeatures("in_progress")
+	if err != nil {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	if len(features) == 0 {
+		os.WriteFile(sentinelPath, []byte{}, 0644)
+		allow.SystemMessage = "[docket] No active docket feature. Call get_ready to set up tracking before dispatching subagents."
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	// Check if top feature has task items
+	_, total, err := s.GetFeatureProgress(features[0].ID)
+	if err != nil {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	if total == 0 {
+		os.WriteFile(sentinelPath, []byte{}, 0644)
+		allow.SystemMessage = fmt.Sprintf(
+			"[docket] Active feature %q (id: %s) has no task items. Add task items from the plan before dispatching subagents.",
+			features[0].Title, features[0].ID,
+		)
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	// Feature has task items — all good
+	json.NewEncoder(w).Encode(allow)
 }
 
 func handlePostToolUse(h *hookInput, w io.Writer) {
