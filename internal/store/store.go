@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -251,6 +252,80 @@ func (s *Store) ListFeatures(status string) ([]Feature, error) {
 		features = append(features, f)
 	}
 	return features, nil
+}
+
+func (s *Store) ListFeaturesWithTag(status, tag string) ([]Feature, error) {
+	query := `SELECT id, title, description, status, type, left_off, notes, key_files, tags, worktree_path, created_at, updated_at FROM features WHERE tags LIKE ?`
+	args := []any{"%" + `"` + tag + `"` + "%"}
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+	query += " ORDER BY updated_at DESC"
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list features by tag: %w", err)
+	}
+	defer rows.Close()
+	var features []Feature
+	for rows.Next() {
+		var f Feature
+		var keyFilesJSON, tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &tagsJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan feature: %w", err)
+		}
+		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
+		if f.KeyFiles == nil {
+			f.KeyFiles = []string{}
+		}
+		json.Unmarshal([]byte(tagsJSON), &f.Tags)
+		if f.Tags == nil {
+			f.Tags = []string{}
+		}
+		features = append(features, f)
+	}
+	return features, nil
+}
+
+func (s *Store) GetKnownTags() ([]string, error) {
+	rows, err := s.db.Query(`SELECT tags FROM features WHERE tags != '[]'`)
+	if err != nil {
+		return nil, fmt.Errorf("get known tags: %w", err)
+	}
+	defer rows.Close()
+
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var tagsJSON string
+		rows.Scan(&tagsJSON)
+		var tags []string
+		json.Unmarshal([]byte(tagsJSON), &tags)
+		for _, t := range tags {
+			seen[t] = true
+		}
+	}
+
+	result := make([]string, 0, len(seen))
+	for t := range seen {
+		result = append(result, t)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func (s *Store) CheckNewTags(tags []string) []string {
+	known, _ := s.GetKnownTags()
+	knownSet := make(map[string]bool, len(known))
+	for _, t := range known {
+		knownSet[t] = true
+	}
+	var newTags []string
+	for _, t := range tags {
+		if !knownSet[t] {
+			newTags = append(newTags, t)
+		}
+	}
+	return newTags
 }
 
 type Session struct {
