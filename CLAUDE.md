@@ -25,15 +25,24 @@ Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.clau
 ## Key Files
 
 - `cmd/docket/main.go` — entry point (serve, init, version commands)
-- `cmd/docket/hook.go` — SessionStart/PostToolUse/Stop hook handlers
-- `cmd/docket/handoff.go` — handoff file renderer and writer
+- `cmd/docket/hook.go` — hook handlers (SessionStart, PreToolUse, PostToolUse, Stop, PreCompact, SessionEnd)
+- `cmd/docket/handoff.go` — thin wrappers delegating to internal/handoff
 - `cmd/docket/update.go` — CLAUDE.md snippet sync command
 - `cmd/docket/export.go` — handoff file export for context resets
 - `internal/mcp/tools.go` — tool registration (18 tools), handlers split across tools_*.go
+- `internal/mcp/tools_checkpoint.go` — checkpoint MCP tool, transcript path finder
 - `internal/store/store.go` — SQLite data layer, Feature/FeatureUpdate structs, completion gate
-- `internal/store/migrate.go` — schema migrations (v1-v7)
+- `internal/store/migrate.go` — schema migrations (v1-v11)
+- `internal/store/checkpoint.go` — checkpoint job queue + observation CRUD
+- `internal/store/worksession.go` — work session CRUD (open, close, get active)
 - `internal/store/templates.go` — feature type templates (feature/bugfix/chore/spike)
 - `internal/store/import.go` — plan file parser (regex-based markdown → subtasks)
+- `internal/transcript/parse.go` — JSONL transcript parser (byte-offset delta extraction)
+- `internal/transcript/types.go` — Delta struct, trivial message map
+- `internal/checkpoint/worker.go` — background job queue worker (polls, summarizes, writes observations)
+- `internal/checkpoint/anthropic.go` — Anthropic Messages API summarizer
+- `internal/checkpoint/config.go` — checkpoint config from env vars
+- `internal/handoff/render.go` — shared handoff rendering (used by hooks and MCP tools)
 - `dashboard/index.html` — single-file frontend (embedded via Go embed)
 - `plugin/` — Claude Code plugin (agent, skills, hooks, MCP config)
 
@@ -55,8 +64,11 @@ Both read/write the same SQLite database at `<project>/.docket/features.db`.
 
 ## Hook / MCP IPC
 
-- `log_session` MCP handler writes `.docket/session-logged` sentinel file. Stop hook checks for it to avoid double-logging. Cleared after each stop cycle.
-- `commits.log` is written by PostToolUse hook, read by Stop hook. Cleared after handoff.
+- `commits.log` is written by PostToolUse hook (records commit hashes). Cleared by SessionEnd hook after handoff.
+- `transcript-offset` file tracks byte offset into Claude's JSONL transcript. Reset at SessionStart, advanced after each checkpoint.
+- Stop hook enqueues checkpoint jobs when transcript delta is meaningful (commits, errors, failed tests, 300+ chars, or non-trivial user input).
+- PreCompact hook always checkpoints (no threshold — context compression means data loss).
+- SessionEnd hook enqueues remaining delta, writes handoff files, closes work session.
 
 ## Adding Schema Migrations
 
@@ -80,8 +92,14 @@ This project uses `docket` for feature tracking. Dashboard: http://localhost:<po
 
 Start of work (after any brainstorming/planning) — call `get_ready` to find existing features, then dispatch `board-manager` agent (model: sonnet) to create or find a card. Use `type` param (feature/bugfix/chore/spike) to auto-generate subtask templates.
 
+Use `tags` param (comma-separated) on `add_feature`/`update_feature` to categorize work. New tags warn about existing tags to prevent typos.
+
+Done features are auto-archived after 7 days. Use `list_features(status="archived")` to see them. `update_feature(status="planned")` to unarchive.
+
+**Plan execution (superpowers):** When using executing-plans or subagent-driven-development, set up docket BEFORE dispatching the first task — call `get_ready`, create/find a feature card, and use `add_task_item` for each plan task. A PreToolUse hook will remind you if you forget.
+
 After a commit — use **direct MCP calls**, not agent dispatch:
-- `update_feature` — set left_off, key_files, status. Completion gate blocks `done` with unchecked items — pass `force=true` + `force_reason` to override.
+- `update_feature` — set left_off, key_files, status, tags. Completion gate blocks `done` with unchecked items — pass `force=true` + `force_reason` to override.
 - `complete_task_item` — check off items with outcome and commit_hash (pass `items` JSON array for batch)
 - `add_decision` — record notable decisions (accepted/rejected with reason)
 - `add_issue` / `resolve_issue` — track bugs found during work

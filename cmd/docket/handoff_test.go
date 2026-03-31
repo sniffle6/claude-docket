@@ -37,7 +37,7 @@ func TestRenderHandoff(t *testing.T) {
 		},
 	}
 
-	result := renderHandoff(data)
+	result := renderHandoff(data, nil)
 
 	checks := []string{
 		"# Handoff: Auth System",
@@ -76,7 +76,7 @@ func TestRenderHandoffMinimal(t *testing.T) {
 		},
 	}
 
-	result := renderHandoff(data)
+	result := renderHandoff(data, nil)
 
 	if !strings.Contains(result, "# Handoff: Simple Feature") {
 		t.Errorf("missing title in output:\n%s", result)

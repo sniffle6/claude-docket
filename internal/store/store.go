@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ type Feature struct {
 	LeftOff      string    `json:"left_off"`
 	Notes        string    `json:"notes"`
 	KeyFiles     []string  `json:"key_files"`
+	Tags         []string  `json:"tags"`
 	WorktreePath string    `json:"worktree_path"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -35,6 +37,7 @@ type FeatureUpdate struct {
 	LeftOff      *string   `json:"left_off,omitempty"`
 	Notes        *string   `json:"notes,omitempty"`
 	KeyFiles     *[]string `json:"key_files,omitempty"`
+	Tags         *[]string `json:"tags,omitempty"`
 	WorktreePath *string   `json:"worktree_path,omitempty"`
 	Force        *bool     `json:"force,omitempty"`
 	ForceReason  *string   `json:"force_reason,omitempty"`
@@ -87,21 +90,36 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// MarkSessionLogged writes a sentinel file so the Stop hook knows
-// log_session was called (avoids complex commit-matching logic).
-func (s *Store) MarkSessionLogged() {
-	os.WriteFile(filepath.Join(s.dir, "session-logged"), []byte{}, 0644)
+func (s *Store) DB() *sql.DB {
+	return s.db
 }
 
-// WasSessionLogged checks if the sentinel file exists.
-func (s *Store) WasSessionLogged() bool {
-	_, err := os.Stat(filepath.Join(s.dir, "session-logged"))
-	return err == nil
-}
+func (s *Store) AutoArchiveStale() ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM features WHERE status = 'done' AND updated_at < datetime('now', '-7 days')`)
+	if err != nil {
+		return nil, fmt.Errorf("query stale features: %w", err)
+	}
+	defer rows.Close()
 
-// ClearSessionLogged removes the sentinel file.
-func (s *Store) ClearSessionLogged() {
-	os.Remove(filepath.Join(s.dir, "session-logged"))
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan stale feature id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+
+	archived := "archived"
+	var archivedIDs []string
+	for _, id := range ids {
+		if err := s.UpdateFeature(id, FeatureUpdate{Status: &archived}); err != nil {
+			fmt.Fprintf(os.Stderr, "docket: auto-archive %q: %v\n", id, err)
+			continue
+		}
+		archivedIDs = append(archivedIDs, id)
+	}
+	return archivedIDs, nil
 }
 
 func (s *Store) AddFeature(title, description string) (*Feature, error) {
@@ -119,18 +137,22 @@ func (s *Store) AddFeature(title, description string) (*Feature, error) {
 
 func (s *Store) GetFeature(id string) (*Feature, error) {
 	row := s.db.QueryRow(
-		`SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
+		`SELECT id, title, description, status, type, left_off, notes, key_files, tags, worktree_path, created_at, updated_at FROM features WHERE id = ?`,
 		id,
 	)
 	var f Feature
-	var keyFilesJSON string
-	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
+	var keyFilesJSON, tagsJSON string
+	err := row.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &tagsJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("get feature %q: %w", id, err)
 	}
 	json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
 	if f.KeyFiles == nil {
 		f.KeyFiles = []string{}
+	}
+	json.Unmarshal([]byte(tagsJSON), &f.Tags)
+	if f.Tags == nil {
+		f.Tags = []string{}
 	}
 	return &f, nil
 }
@@ -187,6 +209,11 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 		sets = append(sets, "key_files = ?")
 		args = append(args, string(kf))
 	}
+	if u.Tags != nil {
+		t, _ := json.Marshal(*u.Tags)
+		sets = append(sets, "tags = ?")
+		args = append(args, string(t))
+	}
 	if u.WorktreePath != nil {
 		sets = append(sets, "worktree_path = ?")
 		args = append(args, *u.WorktreePath)
@@ -210,11 +237,13 @@ func (s *Store) UpdateFeature(id string, u FeatureUpdate) error {
 }
 
 func (s *Store) ListFeatures(status string) ([]Feature, error) {
-	query := `SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features`
+	query := `SELECT id, title, description, status, type, left_off, notes, key_files, tags, worktree_path, created_at, updated_at FROM features`
 	var args []any
 	if status != "" {
 		query += " WHERE status = ?"
 		args = append(args, status)
+	} else {
+		query += " WHERE status != 'archived'"
 	}
 	query += " ORDER BY updated_at DESC"
 	rows, err := s.db.Query(query, args...)
@@ -225,17 +254,102 @@ func (s *Store) ListFeatures(status string) ([]Feature, error) {
 	var features []Feature
 	for rows.Next() {
 		var f Feature
-		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		var keyFilesJSON, tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &tagsJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
 		if f.KeyFiles == nil {
 			f.KeyFiles = []string{}
 		}
+		json.Unmarshal([]byte(tagsJSON), &f.Tags)
+		if f.Tags == nil {
+			f.Tags = []string{}
+		}
 		features = append(features, f)
 	}
 	return features, nil
+}
+
+func (s *Store) ListFeaturesWithTag(status, tag string) ([]Feature, error) {
+	query := `SELECT id, title, description, status, type, left_off, notes, key_files, tags, worktree_path, created_at, updated_at FROM features WHERE tags LIKE ? ESCAPE '\'`
+	escaped := strings.NewReplacer("%", "\\%", "_", "\\_").Replace(tag)
+	args := []any{"%" + `"` + escaped + `"` + "%"}
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	} else {
+		query += " AND status != 'archived'"
+	}
+	query += " ORDER BY updated_at DESC"
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list features by tag: %w", err)
+	}
+	defer rows.Close()
+	var features []Feature
+	for rows.Next() {
+		var f Feature
+		var keyFilesJSON, tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &tagsJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan feature: %w", err)
+		}
+		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
+		if f.KeyFiles == nil {
+			f.KeyFiles = []string{}
+		}
+		json.Unmarshal([]byte(tagsJSON), &f.Tags)
+		if f.Tags == nil {
+			f.Tags = []string{}
+		}
+		features = append(features, f)
+	}
+	return features, nil
+}
+
+func (s *Store) GetKnownTags() ([]string, error) {
+	rows, err := s.db.Query(`SELECT tags FROM features WHERE tags != '[]'`)
+	if err != nil {
+		return nil, fmt.Errorf("get known tags: %w", err)
+	}
+	defer rows.Close()
+
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var tagsJSON string
+		if err := rows.Scan(&tagsJSON); err != nil {
+			continue
+		}
+		var tags []string
+		if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+			continue
+		}
+		for _, t := range tags {
+			seen[t] = true
+		}
+	}
+
+	result := make([]string, 0, len(seen))
+	for t := range seen {
+		result = append(result, t)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+func (s *Store) CheckNewTags(tags []string) []string {
+	known, _ := s.GetKnownTags()
+	knownSet := make(map[string]bool, len(known))
+	for _, t := range known {
+		knownSet[t] = true
+	}
+	var newTags []string
+	for _, t := range tags {
+		if !knownSet[t] {
+			newTags = append(newTags, t)
+		}
+	}
+	return newTags
 }
 
 type Session struct {
@@ -351,7 +465,7 @@ func scanSessions(rows *sql.Rows) ([]Session, error) {
 
 func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	rows, err := s.db.Query(
-		`SELECT id, title, description, status, type, left_off, notes, key_files, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
+		`SELECT id, title, description, status, type, left_off, notes, key_files, tags, worktree_path, created_at, updated_at FROM features WHERE status IN ('in_progress', 'planned') ORDER BY CASE WHEN status='in_progress' THEN 0 ELSE 1 END, updated_at DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get ready features: %w", err)
@@ -360,13 +474,17 @@ func (s *Store) GetReadyFeatures() ([]Feature, error) {
 	var features []Feature
 	for rows.Next() {
 		var f Feature
-		var keyFilesJSON string
-		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		var keyFilesJSON, tagsJSON string
+		if err := rows.Scan(&f.ID, &f.Title, &f.Description, &f.Status, &f.Type, &f.LeftOff, &f.Notes, &keyFilesJSON, &tagsJSON, &f.WorktreePath, &f.CreatedAt, &f.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan feature: %w", err)
 		}
 		json.Unmarshal([]byte(keyFilesJSON), &f.KeyFiles)
 		if f.KeyFiles == nil {
 			f.KeyFiles = []string{}
+		}
+		json.Unmarshal([]byte(tagsJSON), &f.Tags)
+		if f.Tags == nil {
+			f.Tags = []string{}
 		}
 		features = append(features, f)
 	}

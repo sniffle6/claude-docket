@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/sniffle6/claude-docket/internal/store"
+	"github.com/sniffle6/claude-docket/internal/transcript"
 )
 
 func strPtr(s string) *string { return &s }
@@ -90,27 +91,20 @@ func TestSessionStartNoFeatures(t *testing.T) {
 	}
 }
 
-func TestStopWithCommitsAndFeature(t *testing.T) {
+func TestStopNeverBlocks(t *testing.T) {
 	dir := t.TempDir()
-	s, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s, _ := store.Open(dir)
+	s.AddFeature("Test Feature", "test")
+	s.UpdateFeature("test-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.OpenWorkSession("test-feature", "sess-1")
 
-	f, err := s.AddFeature("My Feature", "testing stop hook")
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := "in_progress"
-	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+	commitsPath := filepath.Join(dir, ".docket", "commits.log")
+	os.WriteFile(commitsPath, []byte("abc123|||fix bug\n"), 0644)
+	os.WriteFile(filepath.Join(dir, ".docket", "transcript-offset"), []byte("0"), 0644)
 	s.Close()
 
-	// Write a commits.log
-	commitsPath := filepath.Join(dir, ".docket", "commits.log")
-	os.WriteFile(commitsPath, []byte("abc123|||feat: add something\ndef456|||fix: broken thing\n"), 0644)
-
 	h := &hookInput{
-		SessionID:     "test-session",
+		SessionID:     "sess-1",
 		CWD:           dir,
 		HookEventName: "Stop",
 	}
@@ -118,174 +112,11 @@ func TestStopWithCommitsAndFeature(t *testing.T) {
 	var buf bytes.Buffer
 	handleStop(h, &buf)
 
-	// First stop should block and prompt for rich summary
 	var out stopHookOutput
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("decode output: %v", err)
-	}
-	if out.Decision != "block" {
-		t.Errorf("expected decision=block, got: %s", out.Decision)
-	}
-	if !strings.Contains(out.Reason, f.ID) {
-		t.Errorf("expected feature ID in reason, got: %s", out.Reason)
-	}
-	if !strings.Contains(out.Reason, "log_session") {
-		t.Errorf("expected log_session instruction in reason, got: %s", out.Reason)
-	}
-	if !strings.Contains(out.Reason, "abc123") {
-		t.Errorf("expected commit hashes in reason, got: %s", out.Reason)
-	}
+	json.Unmarshal(buf.Bytes(), &out)
 
-	// Commits.log should NOT be deleted yet (cleaned on re-trigger)
-	if _, err := os.Stat(commitsPath); os.IsNotExist(err) {
-		t.Error("expected commits.log to still exist after first stop")
-	}
-
-	// No session should be logged by the hook (Claude does it via MCP)
-	s2, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
-
-	sessions, err := s2.GetSessionsForFeature(f.ID)
-	if err != nil {
-		t.Fatalf("get sessions: %v", err)
-	}
-	if len(sessions) != 0 {
-		t.Fatalf("expected 0 sessions (Claude logs via MCP), got %d", len(sessions))
-	}
-}
-
-func TestStopRetriggerWritesHandoffAndCleans(t *testing.T) {
-	dir := t.TempDir()
-	s, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := s.AddFeature("My Feature", "testing re-trigger")
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := "in_progress"
-	leftOff := "wrote the parser"
-	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status, LeftOff: &leftOff})
-	s.Close()
-
-	// Write a commits.log (leftover from first stop)
-	commitsPath := filepath.Join(dir, ".docket", "commits.log")
-	os.WriteFile(commitsPath, []byte("abc123|||feat: add something\n"), 0644)
-
-	h := &hookInput{
-		SessionID:      "test-session",
-		CWD:            dir,
-		HookEventName:  "Stop",
-		StopHookActive: true,
-	}
-
-	var buf bytes.Buffer
-	handleStop(h, &buf)
-
-	// Re-trigger should allow stop (no decision)
-	var out stopHookOutput
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		t.Fatalf("decode output: %v", err)
-	}
-	if out.Decision != "" {
-		t.Errorf("expected no decision on re-trigger, got: %s", out.Decision)
-	}
-
-	// Commits.log should be cleaned up
-	if _, err := os.Stat(commitsPath); !os.IsNotExist(err) {
-		t.Error("expected commits.log to be deleted on re-trigger")
-	}
-
-	// Handoff file should be written
-	handoffPath := filepath.Join(dir, ".docket", "handoff", f.ID+".md")
-	content, err := os.ReadFile(handoffPath)
-	if err != nil {
-		t.Fatalf("handoff file not created: %v", err)
-	}
-	if !strings.Contains(string(content), "# Handoff: My Feature") {
-		t.Errorf("handoff missing title:\n%s", content)
-	}
-	if !strings.Contains(string(content), "wrote the parser") {
-		t.Errorf("handoff missing left_off:\n%s", content)
-	}
-
-	// Fallback: session should be logged mechanically since Claude didn't call log_session
-	s2, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
-
-	sessions, err := s2.GetSessionsForFeature(f.ID)
-	if err != nil {
-		t.Fatalf("get sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected 1 fallback session, got %d", len(sessions))
-	}
-	if !strings.Contains(sessions[0].Summary, "feat: add something") {
-		t.Errorf("expected mechanical summary, got: %s", sessions[0].Summary)
-	}
-}
-
-func TestStopRetriggerNoDoubleLog(t *testing.T) {
-	dir := t.TempDir()
-	s, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := s.AddFeature("My Feature", "testing no double log")
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := "in_progress"
-	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
-
-	// Simulate Claude having called log_session with the commit hash
-	s.LogSession(store.SessionInput{
-		FeatureID: f.ID,
-		Summary:   "Rich AI summary of the session",
-		Commits:   []string{"abc123"},
-	})
-	s.MarkSessionLogged()
-	s.Close()
-
-	// Write a commits.log with the same commit
-	commitsPath := filepath.Join(dir, ".docket", "commits.log")
-	os.WriteFile(commitsPath, []byte("abc123|||feat: add something\n"), 0644)
-
-	h := &hookInput{
-		SessionID:      "test-session",
-		CWD:            dir,
-		HookEventName:  "Stop",
-		StopHookActive: true,
-	}
-
-	var buf bytes.Buffer
-	handleStop(h, &buf)
-
-	// Should NOT double-log — Claude already logged the session
-	s2, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s2.Close()
-
-	sessions, err := s2.GetSessionsForFeature(f.ID)
-	if err != nil {
-		t.Fatalf("get sessions: %v", err)
-	}
-	if len(sessions) != 1 {
-		t.Fatalf("expected exactly 1 session (no double-log), got %d", len(sessions))
-	}
-	if !strings.Contains(sessions[0].Summary, "Rich AI summary") {
-		t.Errorf("expected Claude's rich summary, got: %s", sessions[0].Summary)
+	if out.Decision == "block" {
+		t.Error("Stop hook must never block")
 	}
 }
 
@@ -314,20 +145,199 @@ func TestStopNoCommitsNoFeatures(t *testing.T) {
 	if out.Decision != "" {
 		t.Errorf("expected no decision, got: %s", out.Decision)
 	}
+}
 
-	// Verify no sessions were logged
-	s2, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
+func TestStopEnqueuesCheckpointWithCommits(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	s.AddFeature("My Feature", "testing stop")
+	s.UpdateFeature("my-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.OpenWorkSession("my-feature", "sess-1")
+
+	commitsPath := filepath.Join(dir, ".docket", "commits.log")
+	os.WriteFile(commitsPath, []byte("abc123|||feat: add something\n"), 0644)
+	os.WriteFile(filepath.Join(dir, ".docket", "transcript-offset"), []byte("0"), 0644)
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "Stop",
 	}
+
+	var buf bytes.Buffer
+	handleStop(h, &buf)
+
+	var out stopHookOutput
+	json.Unmarshal(buf.Bytes(), &out)
+
+	// Never blocks
+	if out.Decision == "block" {
+		t.Error("Stop hook must never block")
+	}
+
+	// Should have enqueued a checkpoint job
+	s2, _ := store.Open(dir)
 	defer s2.Close()
-
-	sessions, err := s2.GetUnlinkedSessions()
+	job, err := s2.DequeueCheckpointJob()
 	if err != nil {
-		t.Fatalf("get sessions: %v", err)
+		t.Fatalf("dequeue: %v", err)
 	}
-	if len(sessions) != 0 {
-		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	if job == nil {
+		t.Fatal("expected a checkpoint job to be enqueued")
+	}
+	if job.FeatureID != "my-feature" {
+		t.Errorf("job.FeatureID = %q, want %q", job.FeatureID, "my-feature")
+	}
+	if job.Reason != "stop" {
+		t.Errorf("job.Reason = %q, want %q", job.Reason, "stop")
+	}
+}
+
+func TestSessionEndClosesWorkSession(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	s.AddFeature("Test Feature", "test")
+	s.UpdateFeature("test-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.OpenWorkSession("test-feature", "sess-1")
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "SessionEnd",
+	}
+
+	var buf bytes.Buffer
+	handleSessionEnd(h, &buf)
+
+	s2, _ := store.Open(dir)
+	defer s2.Close()
+	_, err := s2.GetActiveWorkSession()
+	if err == nil {
+		t.Error("expected no active work session after SessionEnd")
+	}
+}
+
+func TestSessionEndWritesHandoffs(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	f, _ := s.AddFeature("Handoff Feature", "testing handoff")
+	s.UpdateFeature(f.ID, store.FeatureUpdate{
+		Status: strPtr("in_progress"),
+		LeftOff: strPtr("implementing the parser"),
+	})
+	s.OpenWorkSession(f.ID, "sess-1")
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "SessionEnd",
+	}
+
+	var buf bytes.Buffer
+	handleSessionEnd(h, &buf)
+
+	// Verify handoff file was created
+	handoffPath := filepath.Join(dir, ".docket", "handoff", f.ID+".md")
+	content, err := os.ReadFile(handoffPath)
+	if err != nil {
+		t.Fatalf("handoff file not created: %v", err)
+	}
+	if !strings.Contains(string(content), "# Handoff: Handoff Feature") {
+		t.Errorf("handoff missing title:\n%s", content)
+	}
+	if !strings.Contains(string(content), "implementing the parser") {
+		t.Errorf("handoff missing left_off:\n%s", content)
+	}
+}
+
+func TestSessionEndCleansStaleHandoffs(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+
+	// Create one active and one done feature
+	s.AddFeature("Active Feature", "")
+	s.UpdateFeature("active-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.AddFeature("Done Feature", "")
+	s.UpdateFeature("done-feature", store.FeatureUpdate{Status: strPtr("done")})
+	s.OpenWorkSession("active-feature", "sess-1")
+	s.Close()
+
+	// Create a stale handoff for the done feature
+	handoffDir := filepath.Join(dir, ".docket", "handoff")
+	os.MkdirAll(handoffDir, 0755)
+	os.WriteFile(filepath.Join(handoffDir, "done-feature.md"), []byte("stale"), 0644)
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "SessionEnd",
+	}
+
+	var buf bytes.Buffer
+	handleSessionEnd(h, &buf)
+
+	// Active feature should have a handoff
+	if _, err := os.Stat(filepath.Join(handoffDir, "active-feature.md")); err != nil {
+		t.Error("active handoff should exist")
+	}
+	// Done feature handoff should be cleaned up
+	if _, err := os.Stat(filepath.Join(handoffDir, "done-feature.md")); !os.IsNotExist(err) {
+		t.Error("stale handoff should be deleted")
+	}
+}
+
+func TestSessionEndCleansCommitsLog(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	s.AddFeature("Test Feature", "")
+	s.UpdateFeature("test-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.OpenWorkSession("test-feature", "sess-1")
+	s.Close()
+
+	commitsPath := filepath.Join(dir, ".docket", "commits.log")
+	os.WriteFile(commitsPath, []byte("abc123|||fix bug\n"), 0644)
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "SessionEnd",
+	}
+
+	var buf bytes.Buffer
+	handleSessionEnd(h, &buf)
+
+	if _, err := os.Stat(commitsPath); !os.IsNotExist(err) {
+		t.Error("expected commits.log to be deleted after SessionEnd")
+	}
+}
+
+func TestSessionStartOpensWorkSession(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	s.AddFeature("Test Feature", "test")
+	s.UpdateFeature("test-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+
+	var buf bytes.Buffer
+	handleSessionStart(h, &buf)
+
+	s2, _ := store.Open(dir)
+	defer s2.Close()
+	ws, err := s2.GetActiveWorkSession()
+	if err != nil {
+		t.Fatalf("expected active work session, got error: %v", err)
+	}
+	if ws.FeatureID != "test-feature" {
+		t.Errorf("FeatureID = %q, want %q", ws.FeatureID, "test-feature")
 	}
 }
 
@@ -354,87 +364,6 @@ func TestPostToolUseIgnoresNonCommit(t *testing.T) {
 	}
 	if out.SystemMessage != "" {
 		t.Errorf("expected no systemMessage for non-commit, got: %s", out.SystemMessage)
-	}
-}
-
-func TestStopWritesHandoffFile(t *testing.T) {
-	dir := t.TempDir()
-	s, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	f, err := s.AddFeature("Handoff Feature", "testing handoff generation")
-	if err != nil {
-		t.Fatal(err)
-	}
-	status := "in_progress"
-	leftOff := "implementing the parser"
-	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status, LeftOff: &leftOff})
-	s.Close()
-
-	// Handoff files are written on re-trigger (stop_hook_active=true)
-	h := &hookInput{
-		SessionID:      "test-session",
-		CWD:            dir,
-		HookEventName:  "Stop",
-		StopHookActive: true,
-	}
-
-	var buf bytes.Buffer
-	handleStop(h, &buf)
-
-	// Verify handoff file was created
-	handoffPath := filepath.Join(dir, ".docket", "handoff", f.ID+".md")
-	content, err := os.ReadFile(handoffPath)
-	if err != nil {
-		t.Fatalf("handoff file not created: %v", err)
-	}
-	if !strings.Contains(string(content), "# Handoff: Handoff Feature") {
-		t.Errorf("handoff missing title:\n%s", content)
-	}
-	if !strings.Contains(string(content), "implementing the parser") {
-		t.Errorf("handoff missing left_off:\n%s", content)
-	}
-}
-
-func TestStopCleansStaleHandoffs(t *testing.T) {
-	dir := t.TempDir()
-	s, err := store.Open(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Create one active and one done feature
-	s.AddFeature("Active Feature", "")
-	s.UpdateFeature("active-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
-	s.AddFeature("Done Feature", "")
-	s.UpdateFeature("done-feature", store.FeatureUpdate{Status: strPtr("done")})
-	s.Close()
-
-	// Create a stale handoff for the done feature
-	handoffDir := filepath.Join(dir, ".docket", "handoff")
-	os.MkdirAll(handoffDir, 0755)
-	os.WriteFile(filepath.Join(handoffDir, "done-feature.md"), []byte("stale"), 0644)
-
-	// Stale handoff cleanup happens on re-trigger
-	h := &hookInput{
-		SessionID:      "test-session",
-		CWD:            dir,
-		HookEventName:  "Stop",
-		StopHookActive: true,
-	}
-
-	var buf bytes.Buffer
-	handleStop(h, &buf)
-
-	// Active feature should have a handoff
-	if _, err := os.Stat(filepath.Join(handoffDir, "active-feature.md")); err != nil {
-		t.Error("active handoff should exist")
-	}
-	// Done feature handoff should be cleaned up
-	if _, err := os.Stat(filepath.Join(handoffDir, "done-feature.md")); !os.IsNotExist(err) {
-		t.Error("stale handoff should be deleted")
 	}
 }
 
@@ -659,6 +588,43 @@ func TestPostToolUseAutoImportsPlan(t *testing.T) {
 	}
 }
 
+func TestSessionStartAutoArchives(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a done feature backdated 8 days
+	s.AddFeature("Old Done Feature", "")
+	done := "done"
+	s.UpdateFeature("old-done-feature", store.FeatureUpdate{Status: &done})
+	s.DB().Exec(`UPDATE features SET updated_at = datetime('now', '-8 days') WHERE id = 'old-done-feature'`)
+
+	// Create an active feature
+	s.AddFeature("Active Feature", "")
+	ip := "in_progress"
+	s.UpdateFeature("active-feature", store.FeatureUpdate{Status: &ip})
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+
+	var buf bytes.Buffer
+	handleSessionStart(h, &buf)
+
+	// Verify old feature was archived
+	s2, _ := store.Open(dir)
+	defer s2.Close()
+	f, _ := s2.GetFeature("old-done-feature")
+	if f.Status != "archived" {
+		t.Fatalf("expected archived, got %q", f.Status)
+	}
+}
+
 func TestIsPlanFile(t *testing.T) {
 	tests := []struct {
 		path string
@@ -667,8 +633,8 @@ func TestIsPlanFile(t *testing.T) {
 		{"docs/superpowers/plans/2026-03-28-feature.md", true},
 		{"plans/my-plan.md", true},
 		{"docs/my-feature-plan.md", true},
-		{"src/plans/config.go", false},        // not .md
-		{"docs/migration-plans/notes.txt", false}, // not .md
+		{"src/plans/config.go", false},             // not .md
+		{"docs/migration-plans/notes.txt", false},  // not .md
 		{"src/handler.go", false},
 		{"README.md", false},
 		{"plans/readme.txt", false}, // not .md
@@ -763,5 +729,255 @@ func TestPostToolUseRecordsCommit(t *testing.T) {
 	}
 	if !strings.Contains(out.SystemMessage, f.ID) {
 		t.Errorf("expected feature ID in message, got: %s", out.SystemMessage)
+	}
+}
+
+func TestPreToolUseNoFeatures(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.HookSpecificOutput == nil || out.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Error("expected permissionDecision=allow")
+	}
+	if !strings.Contains(out.SystemMessage, "No active docket feature") {
+		t.Errorf("expected nudge message, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, "get_ready") {
+		t.Errorf("expected get_ready instruction, got: %s", out.SystemMessage)
+	}
+
+	// Verify sentinel was written
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	if _, err := os.Stat(sentinel); os.IsNotExist(err) {
+		t.Error("expected agent-nudged sentinel to be created")
+	}
+}
+
+func TestPreToolUseFeatureNoTaskItems(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := s.AddFeature("My Feature", "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := "in_progress"
+	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.HookSpecificOutput == nil || out.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Error("expected permissionDecision=allow")
+	}
+	if !strings.Contains(out.SystemMessage, "no task items") {
+		t.Errorf("expected task items nudge, got: %s", out.SystemMessage)
+	}
+	if !strings.Contains(out.SystemMessage, f.ID) {
+		t.Errorf("expected feature ID in message, got: %s", out.SystemMessage)
+	}
+}
+
+func TestPreToolUseFeatureWithTaskItems(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := s.AddFeature("My Feature", "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := "in_progress"
+	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+
+	// Add a subtask with a task item
+	st, err := s.AddSubtask(f.ID, "Task 1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.AddTaskItem(st.ID, "Step 1: do something", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.HookSpecificOutput == nil || out.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Error("expected permissionDecision=allow")
+	}
+	if out.SystemMessage != "" {
+		t.Errorf("expected no systemMessage when task items exist, got: %s", out.SystemMessage)
+	}
+
+	// Verify no sentinel written
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Error("sentinel should NOT be written when feature has task items")
+	}
+}
+
+func TestPreToolUseSentinelPreventsReNudge(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Write the sentinel (simulating a prior nudge)
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	os.WriteFile(sentinel, []byte{}, 0644)
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PreToolUse",
+		ToolName:      "Agent",
+	}
+
+	var buf bytes.Buffer
+	handlePreToolUse(h, &buf)
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if out.SystemMessage != "" {
+		t.Errorf("expected no nudge when sentinel exists, got: %s", out.SystemMessage)
+	}
+}
+
+func TestSessionStartClearsSentinel(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	// Write a sentinel from a prior session
+	sentinel := filepath.Join(dir, ".docket", "agent-nudged")
+	os.WriteFile(sentinel, []byte{}, 0644)
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+
+	var buf bytes.Buffer
+	handleSessionStart(h, &buf)
+
+	// Verify sentinel was cleared
+	if _, err := os.Stat(sentinel); !os.IsNotExist(err) {
+		t.Error("expected agent-nudged sentinel to be cleared on SessionStart")
+	}
+}
+
+func TestPreCompactEnqueuesCheckpoint(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := store.Open(dir)
+	s.AddFeature("Test Feature", "test")
+	s.UpdateFeature("test-feature", store.FeatureUpdate{Status: strPtr("in_progress")})
+	s.OpenWorkSession("test-feature", "sess-1")
+	os.WriteFile(filepath.Join(dir, ".docket", "transcript-offset"), []byte("0"), 0644)
+	s.Close()
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "PreCompact",
+		Trigger:       "auto",
+	}
+
+	var buf bytes.Buffer
+	handlePreCompact(h, &buf)
+
+	var out hookOutput
+	json.Unmarshal(buf.Bytes(), &out)
+	if !out.Continue {
+		t.Error("PreCompact must always continue")
+	}
+
+	// Should have enqueued a checkpoint job
+	s2, _ := store.Open(dir)
+	defer s2.Close()
+	job, err := s2.DequeueCheckpointJob()
+	if err != nil {
+		t.Fatalf("dequeue: %v", err)
+	}
+	if job == nil {
+		t.Fatal("expected a checkpoint job to be enqueued")
+	}
+	if job.Reason != "precompact" {
+		t.Errorf("job.Reason = %q, want %q", job.Reason, "precompact")
+	}
+}
+
+func TestIsDeltaMeaningfulWithCommitsLog(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".docket"), 0755)
+	commitsPath := filepath.Join(dir, ".docket", "commits.log")
+	os.WriteFile(commitsPath, []byte("abc123|||fix bug\n"), 0644)
+
+	delta := &transcript.Delta{}
+	if !isDeltaMeaningful(dir, delta) {
+		t.Error("delta with commits.log should be meaningful")
+	}
+}
+
+func TestIsDeltaMeaningfulEmpty(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, ".docket"), 0755)
+
+	delta := &transcript.Delta{}
+	if isDeltaMeaningful(dir, delta) {
+		t.Error("empty delta should not be meaningful")
 	}
 }

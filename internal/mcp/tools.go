@@ -9,7 +9,7 @@ import (
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
-func registerTools(srv *server.MCPServer, s *store.Store) {
+func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 	srv.AddTool(mcp.NewTool("add_feature",
 		mcp.WithDescription("Create a new feature to track. Returns the generated slug ID."),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Feature title (e.g., 'Bluetooth Panel')")),
@@ -17,39 +17,34 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("status", mcp.Description("Initial status: planned (default), in_progress, blocked, dev_complete")),
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude to read when picking up this feature")),
 		mcp.WithString("type", mcp.Description("Feature type: feature, bugfix, chore, spike. Auto-creates subtasks from template when set.")),
+		mcp.WithString("tags", mcp.Description("Comma-separated tags (e.g., 'auth,frontend'). New tags trigger a warning listing existing tags.")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
 		mcp.WithDescription("Update a feature's status, description, left_off note, notes, worktree_path, or key_files."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
-		mcp.WithString("status", mcp.Description("New status: planned, in_progress, done, blocked, dev_complete")),
+		mcp.WithString("status", mcp.Description("New status: planned, in_progress, done, blocked, dev_complete, archived")),
 		mcp.WithString("title", mcp.Description("New title")),
 		mcp.WithString("description", mcp.Description("New description")),
 		mcp.WithString("left_off", mcp.Description("Where work stopped — free text")),
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude")),
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
 		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
+		mcp.WithString("tags", mcp.Description("Comma-separated tags — replaces all existing tags. New tags trigger a warning.")),
 		mcp.WithBoolean("force", mcp.Description("Force status=done even with unchecked task items or open issues. Logs a decision.")),
 		mcp.WithString("force_reason", mcp.Description("Reason for force-completing (logged as a decision)")),
 	), updateFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
-		mcp.WithDescription("List all features. Returns compact summaries: ID, title, status, left_off snippet. Filter by status optionally."),
-		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked, dev_complete. Omit for all.")),
+		mcp.WithDescription("List features. Returns compact summaries: ID, title, status, tags, left_off snippet. Excludes archived by default."),
+		mcp.WithString("status", mcp.Description("Filter by status: planned, in_progress, done, blocked, dev_complete, archived. Omit for all (excluding archived).")),
+		mcp.WithString("tag", mcp.Description("Filter to features with this tag. Combines with status filter.")),
 	), listFeaturesHandler(s))
 
 	srv.AddTool(mcp.NewTool("get_feature",
 		mcp.WithDescription("Get full detail for one feature including all linked sessions."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
 	), getFeatureHandler(s))
-
-	srv.AddTool(mcp.NewTool("log_session",
-		mcp.WithDescription("Record a session summary. Call this at end of session to log what was accomplished."),
-		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID this session was about.")),
-		mcp.WithString("summary", mcp.Required(), mcp.Description("Brief summary of what was accomplished")),
-		mcp.WithString("files_touched", mcp.Description("Comma-separated list of files modified this session")),
-		mcp.WithString("commits", mcp.Description("Comma-separated list of commit hashes made this session")),
-	), logSessionHandler(s))
 
 	srv.AddTool(mcp.NewTool("get_context",
 		mcp.WithDescription("Get a token-efficient briefing for a feature: status, where we left off, worktree path, recent sessions, key files. ~15-20 lines."),
@@ -131,6 +126,11 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("outcome", mcp.Required(), mcp.Description("accepted or rejected")),
 		mcp.WithString("reason", mcp.Required(), mcp.Description("Why — one-liner (e.g., 'Too complex for MVP, polling sufficient')")),
 	), addDecisionHandler(s))
+
+	srv.AddTool(mcp.NewTool("checkpoint",
+		mcp.WithDescription("Force a checkpoint of the current session's semantic and mechanical state. Enqueues a background summarization job. Pass end_session=true to also close the work session and write the handoff file."),
+		mcp.WithBoolean("end_session", mcp.Description("If true, close the work session and write handoff after checkpointing. Default: false.")),
+	), checkpointHandler(s, projectDir))
 }
 
 func parseInt64(s string) int64 {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
@@ -9,10 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/server"
 
 	staticfiles "github.com/sniffle6/claude-docket/dashboard"
+	"github.com/sniffle6/claude-docket/internal/checkpoint"
 	"github.com/sniffle6/claude-docket/internal/dashboard"
 	docketmcp "github.com/sniffle6/claude-docket/internal/mcp"
 	"github.com/sniffle6/claude-docket/internal/store"
@@ -95,8 +98,25 @@ func runServe() {
 		}
 	}()
 
+	// Start checkpoint worker in background
+	cfg := checkpoint.LoadConfig()
+	var summarizer checkpoint.SummarizerBackend
+	if cfg.Enabled {
+		summarizer = checkpoint.NewAnthropicSummarizer(cfg)
+		log.Printf("Checkpoint summarizer: enabled (model: %s)", cfg.Model)
+	} else {
+		summarizer = &checkpoint.NoopSummarizer{}
+		log.Printf("Checkpoint summarizer: disabled (no ANTHROPIC_API_KEY)")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	worker := checkpoint.NewWorker(s, summarizer)
+	go worker.Run(ctx, 5*time.Second)
+
 	// Run MCP server on stdio (blocks)
-	mcpServer := docketmcp.NewServer(s)
+	mcpServer := docketmcp.NewServer(s, dir)
 	if err := server.ServeStdio(mcpServer); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}
