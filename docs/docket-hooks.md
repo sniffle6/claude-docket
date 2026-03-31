@@ -5,7 +5,7 @@ Docket automatically tracks session activity using Claude Code lifecycle hooks a
 ## What it does
 
 - **Session start**: Injects active feature context (title, status, left_off, next task) into the conversation. Opens a work session linking the Claude session to the active feature.
-- **After git commits**: Records each commit hash and message to `.docket/commits.log`.
+- **After git commits**: Records each commit hash and message to `.docket/commits.log`. Nudges the LLM with a list of unchecked task items (IDs + titles) so it can call `complete_task_item` immediately.
 - **Stop (every turn)**: If meaningful delta exists (commits, errors, failed tests, or substantial text), enqueues a checkpoint job. Never blocks.
 - **PreCompact**: Forces a checkpoint before context compression — captures everything before the conversation shrinks.
 - **SessionEnd**: Enqueues final checkpoint, writes handoff files with "Last Session" section from accumulated observations, closes the work session.
@@ -15,7 +15,7 @@ Docket automatically tracks session activity using Claude Code lifecycle hooks a
 The plugin declares hooks in `plugin/hooks/hooks.json`. Claude Code fires these automatically:
 
 1. `SessionStart` → opens work session, resets transcript offset, injects feature context
-2. `PostToolUse` (Bash only) → detects `git commit`, appends to commits.log, auto-imports plan files
+2. `PostToolUse` (Bash only) → detects `git commit`, appends to commits.log, auto-imports plan files, lists unchecked task items in system message (capped at 10)
 3. `PreToolUse` (Agent only) → reminds to set up docket tracking before dispatching subagents
 4. `Stop` → parses transcript delta since last checkpoint, enqueues checkpoint job if meaningful, always allows stop
 5. `PreCompact` → forces a checkpoint (always enqueues, no threshold check)
