@@ -470,10 +470,12 @@ func saveTranscriptOffset(cwd string, offset int64) {
 }
 
 func isDeltaMeaningful(cwd string, delta *transcript.Delta) bool {
+	// Check commits.log (PostToolUse hook writes here)
 	commitsPath := filepath.Join(cwd, ".docket", "commits.log")
 	if data, err := os.ReadFile(commitsPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 		return true
 	}
+	// Transcript-detected commits
 	if len(delta.MechanicalFacts.Commits) > 0 {
 		return true
 	}
@@ -485,9 +487,12 @@ func isDeltaMeaningful(cwd string, delta *transcript.Delta) bool {
 			return true
 		}
 	}
+	// Substantial conversation volume
 	if len(delta.SemanticText) >= 300 {
 		return true
 	}
+	// Non-trivial user input that didn't meet the 300-char threshold
+	// (e.g. a short but meaningful instruction like "try the other approach")
 	if delta.HasContent {
 		return true
 	}
