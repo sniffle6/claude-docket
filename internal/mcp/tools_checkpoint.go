@@ -10,6 +10,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/sniffle6/claude-docket/internal/handoff"
 	"github.com/sniffle6/claude-docket/internal/store"
 	"github.com/sniffle6/claude-docket/internal/transcript"
 )
@@ -75,7 +76,7 @@ func checkpointHandler(s *store.Store, projectDir string) server.ToolHandlerFunc
 		if endSession {
 			data, err := s.GetHandoffData(ws.FeatureID)
 			if err == nil {
-				writeHandoffFileFromMCP(projectDir, data)
+				handoff.WriteFile(projectDir, data, nil)
 			}
 			s.CloseWorkSession(ws.ID)
 
@@ -117,39 +118,3 @@ func findTranscriptPath(claudeSessionID string) string {
 	return ""
 }
 
-// writeHandoffFileFromMCP writes a handoff file from the MCP context.
-// This is a simplified version that doesn't include checkpoint data
-// (the checkpoint we just enqueued hasn't been processed yet).
-func writeHandoffFileFromMCP(dir string, data *store.HandoffData) error {
-	handoffDir := filepath.Join(dir, ".docket", "handoff")
-	if err := os.MkdirAll(handoffDir, 0755); err != nil {
-		return err
-	}
-	path := filepath.Join(handoffDir, data.Feature.ID+".md")
-
-	// Use a simple render without checkpoint data
-	var b strings.Builder
-	f := data.Feature
-	fmt.Fprintf(&b, "# Handoff: %s\n\n", f.Title)
-	fmt.Fprintf(&b, "## Status\n%s | Progress: %d/%d | Updated: %s\n\n",
-		f.Status, data.Done, data.Total, f.UpdatedAt.Format("2006-01-02 15:04"))
-	if f.LeftOff != "" {
-		fmt.Fprintf(&b, "## Left Off\n%s\n\n", f.LeftOff)
-	}
-	if len(data.NextTasks) > 0 {
-		b.WriteString("## Next Tasks\n")
-		for _, task := range data.NextTasks {
-			fmt.Fprintf(&b, "- [ ] %s\n", task)
-		}
-		b.WriteString("\n")
-	}
-	if len(f.KeyFiles) > 0 {
-		b.WriteString("## Key Files\n")
-		for _, kf := range f.KeyFiles {
-			fmt.Fprintf(&b, "- %s\n", kf)
-		}
-		b.WriteString("\n")
-	}
-
-	return os.WriteFile(path, []byte(b.String()), 0644)
-}
