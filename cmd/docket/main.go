@@ -96,7 +96,7 @@ func runServe() {
 	}()
 
 	// Run MCP server on stdio (blocks)
-	mcpServer := docketmcp.NewServer(s)
+	mcpServer := docketmcp.NewServer(s, dir)
 	if err := server.ServeStdio(mcpServer); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}

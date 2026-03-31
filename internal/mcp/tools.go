@@ -9,7 +9,7 @@ import (
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
-func registerTools(srv *server.MCPServer, s *store.Store) {
+func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 	srv.AddTool(mcp.NewTool("add_feature",
 		mcp.WithDescription("Create a new feature to track. Returns the generated slug ID."),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Feature title (e.g., 'Bluetooth Panel')")),
@@ -126,6 +126,11 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("outcome", mcp.Required(), mcp.Description("accepted or rejected")),
 		mcp.WithString("reason", mcp.Required(), mcp.Description("Why — one-liner (e.g., 'Too complex for MVP, polling sufficient')")),
 	), addDecisionHandler(s))
+
+	srv.AddTool(mcp.NewTool("checkpoint",
+		mcp.WithDescription("Force a checkpoint of the current session's semantic and mechanical state. Enqueues a background summarization job. Pass end_session=true to also close the work session and write the handoff file."),
+		mcp.WithBoolean("end_session", mcp.Description("If true, close the work session and write handoff after checkpointing. Default: false.")),
+	), checkpointHandler(s, projectDir))
 }
 
 func parseInt64(s string) int64 {
