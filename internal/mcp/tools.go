@@ -46,14 +46,6 @@ func registerTools(srv *server.MCPServer, s *store.Store) {
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
 	), getFeatureHandler(s))
 
-	srv.AddTool(mcp.NewTool("log_session",
-		mcp.WithDescription("Record a session summary. Call this at end of session to log what was accomplished."),
-		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID this session was about.")),
-		mcp.WithString("summary", mcp.Required(), mcp.Description("Brief summary of what was accomplished")),
-		mcp.WithString("files_touched", mcp.Description("Comma-separated list of files modified this session")),
-		mcp.WithString("commits", mcp.Description("Comma-separated list of commit hashes made this session")),
-	), logSessionHandler(s))
-
 	srv.AddTool(mcp.NewTool("get_context",
 		mcp.WithDescription("Get a token-efficient briefing for a feature: status, where we left off, worktree path, recent sessions, key files. ~15-20 lines."),
 		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),

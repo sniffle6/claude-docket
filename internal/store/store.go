@@ -122,23 +122,6 @@ func (s *Store) AutoArchiveStale() ([]string, error) {
 	return archivedIDs, nil
 }
 
-// MarkSessionLogged writes a sentinel file so the Stop hook knows
-// log_session was called (avoids complex commit-matching logic).
-func (s *Store) MarkSessionLogged() {
-	os.WriteFile(filepath.Join(s.dir, "session-logged"), []byte{}, 0644)
-}
-
-// WasSessionLogged checks if the sentinel file exists.
-func (s *Store) WasSessionLogged() bool {
-	_, err := os.Stat(filepath.Join(s.dir, "session-logged"))
-	return err == nil
-}
-
-// ClearSessionLogged removes the sentinel file.
-func (s *Store) ClearSessionLogged() {
-	os.Remove(filepath.Join(s.dir, "session-logged"))
-}
-
 func (s *Store) AddFeature(title, description string) (*Feature, error) {
 	id := slugify(title)
 	now := time.Now().UTC()
