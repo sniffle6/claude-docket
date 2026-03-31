@@ -259,7 +259,7 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 		s.EnqueueCheckpointJob(store.CheckpointJobInput{
 			WorkSessionID:         ws.ID,
 			FeatureID:             ws.FeatureID,
-			Reason:                "stop",
+			Reason:                "session_end",
 			TriggerType:           "auto",
 			TranscriptStartOffset: getTranscriptOffset(h.CWD),
 			TranscriptEndOffset:   delta.EndOffset,

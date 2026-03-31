@@ -132,6 +132,29 @@ CREATE TABLE IF NOT EXISTS checkpoint_observations (
 );
 `
 
+const schemaV10 = `
+CREATE TABLE IF NOT EXISTS checkpoint_jobs_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_session_id INTEGER NOT NULL REFERENCES work_sessions(id),
+    feature_id TEXT NOT NULL,
+    reason TEXT NOT NULL CHECK(reason IN ('stop', 'precompact', 'manual_checkpoint', 'manual_end_session', 'session_end')),
+    trigger_type TEXT NOT NULL DEFAULT '',
+    transcript_start_offset INTEGER NOT NULL DEFAULT 0,
+    transcript_end_offset INTEGER NOT NULL DEFAULT 0,
+    semantic_text TEXT NOT NULL DEFAULT '',
+    mechanical_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued', 'running', 'done', 'failed', 'skipped')),
+    error TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    started_at DATETIME,
+    finished_at DATETIME
+);
+
+INSERT OR IGNORE INTO checkpoint_jobs_new SELECT * FROM checkpoint_jobs;
+DROP TABLE IF EXISTS checkpoint_jobs;
+ALTER TABLE checkpoint_jobs_new RENAME TO checkpoint_jobs;
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -152,5 +175,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV8)
 	// v9: add work_sessions, checkpoint_jobs, checkpoint_observations tables
 	db.Exec(schemaV9)
+	// v10: add 'session_end' to checkpoint_jobs reason CHECK constraint
+	db.Exec(schemaV10)
 	return nil
 }
