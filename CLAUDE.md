@@ -22,6 +22,24 @@ bash install.sh
 
 Builds binary to `~/.local/share/docket/docket.exe`, installs plugin to `~/.claude/plugins/marketplaces/local/docket/`.
 
+## Dev Workflow
+
+For development (symlink-based — plugin edits are live without reinstalling):
+
+```
+bash install.sh --dev
+```
+
+This symlinks `~/.claude/plugins/marketplaces/local/docket/` to the source `plugin/` directory. One-time setup.
+
+After Go code changes:
+
+```
+bash dev-build.sh
+```
+
+Then restart Claude Code or start a new session. Plugin file changes (hooks, skills, agents) only need `/reload-plugins`.
+
 ## Key Files
 
 - `cmd/docket/main.go` — entry point (serve, init, version commands)
