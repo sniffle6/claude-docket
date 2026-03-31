@@ -274,10 +274,24 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 		for _, f := range features {
 			activeIDs[f.ID] = true
 			data, err := s.GetHandoffData(f.ID)
-			if err == nil {
-				if writeErr := writeHandoffFile(h.CWD, data); writeErr != nil {
-					s.MarkHandoffStale(ws.ID)
+			if err != nil {
+				continue
+			}
+
+			var cpData *HandoffCheckpointData
+			if f.ID == ws.FeatureID {
+				obs, _ := s.GetObservationsForWorkSession(ws.ID)
+				mf, _ := s.GetMechanicalFactsForWorkSession(ws.ID)
+				if len(obs) > 0 || mf != nil {
+					cpData = &HandoffCheckpointData{
+						Observations:    obs,
+						MechanicalFacts: mf,
+					}
 				}
+			}
+
+			if writeErr := writeHandoffFileWithCheckpoints(h.CWD, data, cpData); writeErr != nil {
+				s.MarkHandoffStale(ws.ID)
 			}
 		}
 		cleanStaleHandoffs(h.CWD, activeIDs)

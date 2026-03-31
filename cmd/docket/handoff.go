@@ -9,7 +9,12 @@ import (
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
-func renderHandoff(data *store.HandoffData) string {
+type HandoffCheckpointData struct {
+	Observations    []store.CheckpointObservation
+	MechanicalFacts *store.MechanicalFacts
+}
+
+func renderHandoff(data *store.HandoffData, cpData *HandoffCheckpointData) string {
 	var b strings.Builder
 	f := data.Feature
 
@@ -21,6 +26,61 @@ func renderHandoff(data *store.HandoffData) string {
 
 	if f.LeftOff != "" {
 		fmt.Fprintf(&b, "## Left Off\n%s\n\n", f.LeftOff)
+	}
+
+	// Last Session section from checkpoint observations
+	if cpData != nil && (len(cpData.Observations) > 0 || cpData.MechanicalFacts != nil) {
+		b.WriteString("## Last Session\n")
+
+		for _, obs := range cpData.Observations {
+			switch obs.Kind {
+			case "summary":
+				fmt.Fprintf(&b, "%s\n\n", obs.SummaryText)
+			case "blocker":
+				fmt.Fprintf(&b, "- **Blocker:** %s\n", obs.SummaryText)
+			case "dead_end":
+				fmt.Fprintf(&b, "- **Dead end:** %s\n", obs.SummaryText)
+			case "next_step":
+				fmt.Fprintf(&b, "- **Next:** %s\n", obs.SummaryText)
+			case "decision_candidate":
+				fmt.Fprintf(&b, "- **Decision:** %s\n", obs.SummaryText)
+			case "gotcha":
+				fmt.Fprintf(&b, "- **Gotcha:** %s\n", obs.SummaryText)
+			}
+		}
+
+		if cpData.MechanicalFacts != nil {
+			mf := cpData.MechanicalFacts
+			if len(mf.FilesEdited) > 0 {
+				var parts []string
+				for _, fe := range mf.FilesEdited {
+					if fe.Count > 1 {
+						parts = append(parts, fmt.Sprintf("%s (%d×)", fe.Path, fe.Count))
+					} else {
+						parts = append(parts, fe.Path)
+					}
+				}
+				fmt.Fprintf(&b, "\nFiles: %s\n", strings.Join(parts, ", "))
+			}
+			if len(mf.TestRuns) > 0 {
+				passed := 0
+				for _, tr := range mf.TestRuns {
+					if tr.Passed {
+						passed++
+					}
+				}
+				fmt.Fprintf(&b, "Tests: %d runs (%d passed, %d failed)\n",
+					len(mf.TestRuns), passed, len(mf.TestRuns)-passed)
+			}
+			if len(mf.Commits) > 0 {
+				var msgs []string
+				for _, c := range mf.Commits {
+					msgs = append(msgs, fmt.Sprintf("%q", c.Message))
+				}
+				fmt.Fprintf(&b, "Commits: %s\n", strings.Join(msgs, ", "))
+			}
+		}
+		b.WriteString("\n")
 	}
 
 	if len(data.NextTasks) > 0 {
@@ -71,13 +131,17 @@ var enrichmentHeadings = []string{
 }
 
 func writeHandoffFile(dir string, data *store.HandoffData) error {
+	return writeHandoffFileWithCheckpoints(dir, data, nil)
+}
+
+func writeHandoffFileWithCheckpoints(dir string, data *store.HandoffData, cpData *HandoffCheckpointData) error {
 	handoffDir := filepath.Join(dir, ".docket", "handoff")
 	if err := os.MkdirAll(handoffDir, 0755); err != nil {
 		return err
 	}
 	path := filepath.Join(handoffDir, data.Feature.ID+".md")
 
-	baseline := renderHandoff(data)
+	baseline := renderHandoff(data, cpData)
 
 	// Preserve enrichment sections from board-manager if they exist
 	if existing, err := os.ReadFile(path); err == nil {
