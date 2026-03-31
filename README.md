@@ -57,13 +57,16 @@ Both read/write the same SQLite database at `<project>/.docket/features.db`.
 
 ### Automatic Session Tracking
 
-The plugin installs three lifecycle hooks:
+The plugin installs six lifecycle hooks:
 
 | Hook | What it does |
 |------|-------------|
-| **SessionStart** | Injects active feature context and handoff files into the conversation |
-| **PostToolUse** (Bash) | Detects `git commit` commands, records commit hashes to `.docket/commits.log`, auto-imports plan files |
-| **Stop** | Two-phase: blocks to prompt Claude for a rich AI-generated session summary via `log_session`, then writes handoff files on re-trigger |
+| **SessionStart** | Opens a work session, injects active feature context and handoff files |
+| **PreToolUse** (Agent) | Nudges Claude to set up docket tracking before dispatching subagents |
+| **PostToolUse** (Bash) | Detects `git commit` commands, records commit hashes, auto-imports plan files |
+| **Stop** | Parses transcript delta, enqueues a checkpoint if meaningful changes detected |
+| **PreCompact** | Always checkpoints before context compression (no threshold) |
+| **SessionEnd** | Enqueues remaining delta, writes handoff files, closes work session |
 
 No manual tracking needed. See [docs/docket-hooks.md](docs/docket-hooks.md) for details.
 
@@ -77,7 +80,7 @@ The plugin includes a `board-manager` agent (runs on Sonnet) that autonomously:
 
 ### Handoff Files
 
-At session end, docket generates structured markdown files at `.docket/handoff/<feature-id>.md` with status, progress, next tasks, key files, and recent activity. The next session gets this injected automatically — no re-discovery needed. See [docs/handoff-files.md](docs/handoff-files.md).
+At session end, docket generates structured markdown files at `.docket/handoff/<feature-id>.md` with status, progress, next tasks, key files, and recent activity. A "Last Session" section includes observations extracted from conversation transcripts — summaries, blockers, dead ends, decisions, and gotchas. The next session gets this injected automatically — no re-discovery needed. See [docs/handoff-files.md](docs/handoff-files.md) and [docs/transcript-session-context.md](docs/transcript-session-context.md).
 
 ### Feature Templates
 
@@ -109,7 +112,7 @@ Each feature can have decisions logged against it — what was considered, wheth
 | `get_context` | Token-efficient briefing (~15-20 lines). |
 | `get_ready` | Actionable features (in_progress first, then planned). |
 | `get_full_context` | Deep context dump for subagent research. |
-| `log_session` | Record what happened in a session. |
+| `checkpoint` | Force a checkpoint mid-session (enqueues transcript delta for summarization). |
 | `compact_sessions` | Compress old sessions into a summary (keeps last 3). |
 | `import_plan` | Import markdown plan file as subtasks/task items. |
 | `add_subtask` | Add phase(s) — pipe-separated titles for batch. |
@@ -143,18 +146,23 @@ The installed plugin provides:
 | `/docket` skill | Opens the dashboard in your browser |
 | `/docket-init` skill | Initializes docket in a new project |
 | `/docket-update` skill | Syncs the CLAUDE.md snippet to the latest version |
+| `/checkpoint` skill | Force a mid-session checkpoint |
+| `/end-session` skill | Close work session without closing Claude (useful when switching features) |
 | MCP server | Connects Claude Code to the docket binary |
-| Hooks | SessionStart, PostToolUse, Stop — automatic session tracking |
+| Hooks | SessionStart, PreToolUse, PostToolUse, Stop, PreCompact, SessionEnd |
 
 ## Documentation
 
 - [INSTALL.md](INSTALL.md) — Installation, updating, troubleshooting
 - [docs/docket-hooks.md](docs/docket-hooks.md) — How automatic session tracking works
 - [docs/handoff-files.md](docs/handoff-files.md) — Cross-session context handoff
+- [docs/transcript-session-context.md](docs/transcript-session-context.md) — Transcript parsing, checkpoints, and session observations
 - [docs/decision-log.md](docs/decision-log.md) — Decision tracking per feature
 - [docs/feature-templates.md](docs/feature-templates.md) — Feature types, templates, and completion gate
+- [docs/tags-and-archival.md](docs/tags-and-archival.md) — Feature tags and auto-archival
 - [docs/issue-tracking.md](docs/issue-tracking.md) — Bug/issue tracking per feature
 - [docs/quick-track.md](docs/quick-track.md) — Lightweight one-call tracking for small tasks
+- [docs/pretooluse-agent-nudge.md](docs/pretooluse-agent-nudge.md) — PreToolUse hook for subagent setup reminders
 - [docs/mcp-stability.md](docs/mcp-stability.md) — SQLite contention and crash prevention
 - [docs/dark-mode-toggle.md](docs/dark-mode-toggle.md) — Dashboard theming and dev mode
 - [plugin/README.md](plugin/README.md) — Plugin setup and per-project CLAUDE.md snippet
