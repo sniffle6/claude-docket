@@ -90,7 +90,61 @@ func TestCompleteCheckpointJob(t *testing.T) {
 	}
 }
 
-func TestFailCheckpointJob(t *testing.T) {
+func TestFailCheckpointJobRequeuesUnderMaxRetries(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Auth System", "token auth")
+	ws, _ := s.OpenWorkSession("auth-system", "sess-1")
+
+	enqueued, _ := s.EnqueueCheckpointJob(CheckpointJobInput{
+		WorkSessionID:         ws.ID,
+		FeatureID:             "auth-system",
+		Reason:                "stop",
+		TranscriptStartOffset: 0,
+		TranscriptEndOffset:   512,
+		SemanticText:          "text",
+		MechanicalFacts:       MechanicalFacts{},
+	})
+
+	// Fail 3 times — each should re-queue (retries 1, 2, 3)
+	for i := 1; i <= maxCheckpointRetries; i++ {
+		s.DequeueCheckpointJob()
+		err := s.FailCheckpointJob(enqueued.ID, "api timeout")
+		if err != nil {
+			t.Fatalf("FailCheckpointJob (retry %d): %v", i, err)
+		}
+
+		job, _ := s.GetCheckpointJob(enqueued.ID)
+		if job.Status != "queued" {
+			t.Errorf("retry %d: Status = %q, want %q", i, job.Status, "queued")
+		}
+		if job.RetryCount != i {
+			t.Errorf("retry %d: RetryCount = %d, want %d", i, job.RetryCount, i)
+		}
+		if job.Error != "api timeout" {
+			t.Errorf("retry %d: Error = %q, want %q", i, job.Error, "api timeout")
+		}
+	}
+
+	// 4th failure — should stay failed (exceeded max retries)
+	s.DequeueCheckpointJob()
+	err := s.FailCheckpointJob(enqueued.ID, "final failure")
+	if err != nil {
+		t.Fatalf("FailCheckpointJob (final): %v", err)
+	}
+
+	job, _ := s.GetCheckpointJob(enqueued.ID)
+	if job.Status != "failed" {
+		t.Errorf("final: Status = %q, want %q", job.Status, "failed")
+	}
+	if job.Error != "final failure" {
+		t.Errorf("final: Error = %q, want %q", job.Error, "final failure")
+	}
+	if job.RetryCount != maxCheckpointRetries {
+		t.Errorf("final: RetryCount = %d, want %d", job.RetryCount, maxCheckpointRetries)
+	}
+}
+
+func TestCompleteCheckpointJobWithError(t *testing.T) {
 	s := openTestStore(t)
 	s.AddFeature("Auth System", "token auth")
 	ws, _ := s.OpenWorkSession("auth-system", "sess-1")
@@ -106,17 +160,19 @@ func TestFailCheckpointJob(t *testing.T) {
 	})
 
 	s.DequeueCheckpointJob()
-	err := s.FailCheckpointJob(enqueued.ID, "api timeout")
+	errMsg := "api timeout"
+	err := s.CompleteCheckpointJob(enqueued.ID, &errMsg)
 	if err != nil {
-		t.Fatalf("FailCheckpointJob: %v", err)
+		t.Fatalf("CompleteCheckpointJob with error: %v", err)
 	}
 
+	// Should be re-queued (first failure, under max retries)
 	job, _ := s.GetCheckpointJob(enqueued.ID)
-	if job.Status != "failed" {
-		t.Errorf("Status = %q, want %q", job.Status, "failed")
+	if job.Status != "queued" {
+		t.Errorf("Status = %q, want %q", job.Status, "queued")
 	}
-	if job.Error != "api timeout" {
-		t.Errorf("Error = %q, want %q", job.Error, "api timeout")
+	if job.RetryCount != 1 {
+		t.Errorf("RetryCount = %d, want 1", job.RetryCount)
 	}
 }
 

@@ -155,6 +155,10 @@ DROP TABLE IF EXISTS checkpoint_jobs;
 ALTER TABLE checkpoint_jobs_new RENAME TO checkpoint_jobs;
 `
 
+const schemaV11 = `
+ALTER TABLE checkpoint_jobs ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0;
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -177,5 +181,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV9)
 	// v10: add 'session_end' to checkpoint_jobs reason CHECK constraint
 	db.Exec(schemaV10)
+	// v11: add retry_count column to checkpoint_jobs
+	db.Exec(schemaV11)
 	return nil
 }

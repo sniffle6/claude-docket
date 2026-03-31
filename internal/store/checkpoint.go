@@ -45,6 +45,7 @@ type CheckpointJob struct {
 	MechanicalJSON        string     `json:"mechanical_json"`
 	Status                string     `json:"status"`
 	Error                 string     `json:"error"`
+	RetryCount            int        `json:"retry_count"`
 	CreatedAt             time.Time  `json:"created_at"`
 	StartedAt             *time.Time `json:"started_at"`
 	FinishedAt            *time.Time `json:"finished_at"`
@@ -155,7 +156,23 @@ func (s *Store) CompleteCheckpointJob(id int64, errMsg *string) error {
 	return err
 }
 
+const maxCheckpointRetries = 3
+
 func (s *Store) FailCheckpointJob(id int64, errMsg string) error {
+	row := s.db.QueryRow(`SELECT retry_count FROM checkpoint_jobs WHERE id = ?`, id)
+	var retryCount int
+	if err := row.Scan(&retryCount); err != nil {
+		return err
+	}
+
+	if retryCount < maxCheckpointRetries {
+		_, err := s.db.Exec(
+			`UPDATE checkpoint_jobs SET status = 'queued', retry_count = retry_count + 1, error = ?, started_at = NULL WHERE id = ?`,
+			errMsg, id,
+		)
+		return err
+	}
+
 	_, err := s.db.Exec(
 		`UPDATE checkpoint_jobs SET status = 'failed', error = ?, finished_at = datetime('now') WHERE id = ?`,
 		errMsg, id,
@@ -167,7 +184,7 @@ func (s *Store) GetCheckpointJob(id int64) (*CheckpointJob, error) {
 	row := s.db.QueryRow(
 		`SELECT id, work_session_id, feature_id, reason, trigger_type,
                 transcript_start_offset, transcript_end_offset,
-                semantic_text, mechanical_json, status, error,
+                semantic_text, mechanical_json, status, error, retry_count,
                 created_at, started_at, finished_at
          FROM checkpoint_jobs WHERE id = ?`, id,
 	)
@@ -175,7 +192,7 @@ func (s *Store) GetCheckpointJob(id int64) (*CheckpointJob, error) {
 	err := row.Scan(
 		&job.ID, &job.WorkSessionID, &job.FeatureID, &job.Reason, &job.TriggerType,
 		&job.TranscriptStartOffset, &job.TranscriptEndOffset,
-		&job.SemanticText, &job.MechanicalJSON, &job.Status, &job.Error,
+		&job.SemanticText, &job.MechanicalJSON, &job.Status, &job.Error, &job.RetryCount,
 		&job.CreatedAt, &job.StartedAt, &job.FinishedAt,
 	)
 	if err != nil {
