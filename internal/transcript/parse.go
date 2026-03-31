@@ -92,7 +92,6 @@ func Parse(path string, startOffset int64) (*Delta, error) {
 					if block.Text != "" {
 						semanticBuf.WriteString(block.Text)
 						semanticBuf.WriteByte('\n')
-						delta.HasContent = true
 					}
 				case "tool_use":
 					pendingTools[block.ID] = block
@@ -132,6 +131,9 @@ func Parse(path string, startOffset int64) (*Delta, error) {
 	}
 
 	delta.SemanticText = semanticBuf.String()
+	if len(delta.SemanticText) >= 300 {
+		delta.HasContent = true
+	}
 
 	return delta, nil
 }

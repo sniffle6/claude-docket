@@ -29,8 +29,10 @@ func TestParseAssistantText(t *testing.T) {
 	if delta.SemanticText == "" {
 		t.Error("expected semantic text from assistant message")
 	}
-	if !delta.HasContent {
-		t.Error("expected HasContent=true")
+	// Short assistant text (< 300 chars) should NOT set HasContent
+	// HasContent is a meaningful-delta threshold, not a "has any text" flag
+	if delta.HasContent {
+		t.Error("expected HasContent=false for short assistant text (< 300 chars)")
 	}
 }
 
