@@ -1115,3 +1115,39 @@ func TestPostToolUseOmitsCheckedTasks(t *testing.T) {
 		t.Errorf("expected update_feature prompt, got: %s", out.SystemMessage)
 	}
 }
+
+func TestFormatUncheckedTasksCapsAtTen(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	f, _ := s.AddFeature("Big Feature", "lots of tasks")
+	st, _ := s.AddSubtask(f.ID, "Subtask", 0)
+	for i := 0; i < 15; i++ {
+		s.AddTaskItem(st.ID, fmt.Sprintf("Task item %d", i+1), i)
+	}
+
+	result := formatUncheckedTasks(s, f.ID)
+
+	// Should contain exactly 10 numbered items
+	count := strings.Count(result, "\n  #")
+	if count != 10 {
+		t.Errorf("expected 10 items listed, got %d in: %s", count, result)
+	}
+
+	// Should contain truncation message
+	if !strings.Contains(result, "... and 5 more") {
+		t.Errorf("expected '... and 5 more', got: %s", result)
+	}
+
+	// Item 1 should be present, item 15 should not
+	if !strings.Contains(result, "Task item 1") {
+		t.Errorf("expected first item present, got: %s", result)
+	}
+	if strings.Contains(result, "Task item 15") {
+		t.Errorf("item 15 should be truncated, got: %s", result)
+	}
+}
