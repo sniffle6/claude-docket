@@ -3,7 +3,9 @@ package transcript
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func writeFixture(t *testing.T, lines ...string) string {
@@ -176,6 +178,16 @@ func TestParseCRLFEndOffset(t *testing.T) {
 	}
 	if delta.EndOffset != fileSize {
 		t.Errorf("EndOffset = %d, want %d (file size with CRLF endings)", delta.EndOffset, fileSize)
+	}
+}
+
+func TestTruncateUTF8Safety(t *testing.T) {
+	// 4-byte emoji: 🔥 = f0 9f 94 a5
+	// Use maxBytes=201 so the cut lands mid-emoji (byte 201 is inside a 4-byte sequence)
+	input := strings.Repeat("🔥", 60) // 240 bytes, 60 runes
+	result := truncate(input, 201)
+	if !utf8.ValidString(result) {
+		t.Error("truncate produced invalid UTF-8")
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/sniffle6/claude-docket/internal/store"
 )
@@ -206,9 +207,12 @@ func processToolResult(pending contentBlock, rec transcriptRecord, delta *Delta)
 	}
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
 		return s
 	}
-	return s[:max] + "..."
+	for maxBytes > 0 && !utf8.RuneStart(s[maxBytes]) {
+		maxBytes--
+	}
+	return s[:maxBytes] + "..."
 }
