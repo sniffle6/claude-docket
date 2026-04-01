@@ -128,7 +128,10 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	var msg strings.Builder
 	topFeature := features[0]
 
-	s.OpenWorkSession(topFeature.ID, h.SessionID)
+	ws, wsErr := s.OpenWorkSession(topFeature.ID, h.SessionID)
+	if wsErr == nil {
+		s.SetSessionState(ws.ID, "working")
+	}
 
 	handoffPath := filepath.Join(h.CWD, ".docket", "handoff", topFeature.ID+".md")
 
@@ -185,6 +188,8 @@ func handleStop(h *hookInput, w io.Writer) {
 		json.NewEncoder(w).Encode(stopHookOutput{})
 		return
 	}
+
+	s.SetSessionState(ws.ID, "needs_attention")
 
 	delta := parseTranscriptDelta(h)
 	if !isDeltaMeaningful(h.CWD, delta) {
@@ -299,6 +304,7 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.Remove(commitsPath)
 
+	s.SetSessionState(ws.ID, "idle")
 	s.CloseWorkSession(ws.ID)
 	json.NewEncoder(w).Encode(stopHookOutput{})
 }
@@ -308,19 +314,32 @@ func handlePreToolUse(h *hookInput, w io.Writer) {
 		HookSpecificOutput: &preToolUseDecision{PermissionDecision: "allow"},
 	}
 
-	// Check sentinel — already nudged this session
-	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
-	if _, err := os.Stat(sentinelPath); err == nil {
-		json.NewEncoder(w).Encode(allow)
-		return
-	}
-
 	s, err := store.Open(h.CWD)
 	if err != nil {
 		json.NewEncoder(w).Encode(allow)
 		return
 	}
 	defer s.Close()
+
+	// Flip session state back to working if Claude resumes after a stop
+	if ws, wsErr := s.GetActiveWorkSession(); wsErr == nil {
+		if ws.SessionState == "needs_attention" {
+			s.SetSessionState(ws.ID, "working")
+		}
+	}
+
+	// Agent-specific nudge: only run for Agent tool dispatches
+	if h.ToolName != "Agent" {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
+
+	// Check sentinel — already nudged this session
+	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
+	if _, err := os.Stat(sentinelPath); err == nil {
+		json.NewEncoder(w).Encode(allow)
+		return
+	}
 
 	features, err := s.ListFeatures("in_progress")
 	if err != nil {
