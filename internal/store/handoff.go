@@ -1,5 +1,57 @@
 package store
 
+// LaunchData holds everything needed to generate a launch prompt file.
+type LaunchData struct {
+	Feature   Feature
+	Subtasks  []Subtask  // active only
+	TaskItems []TaskItem // unchecked only
+	Issues    []Issue    // open only
+}
+
+// GetLaunchData gathers feature details, unchecked tasks, and open issues
+// in one call for the launch endpoint.
+func (s *Store) GetLaunchData(featureID string) (*LaunchData, error) {
+	f, err := s.GetFeature(featureID)
+	if err != nil {
+		return nil, err
+	}
+
+	subtasks, _ := s.GetSubtasksForFeature(featureID, false)
+	if subtasks == nil {
+		subtasks = []Subtask{}
+	}
+
+	var uncheckedItems []TaskItem
+	for _, st := range subtasks {
+		for _, item := range st.Items {
+			if !item.Checked {
+				uncheckedItems = append(uncheckedItems, item)
+			}
+		}
+	}
+	if uncheckedItems == nil {
+		uncheckedItems = []TaskItem{}
+	}
+
+	issues, _ := s.GetIssuesForFeature(featureID)
+	var openIssues []Issue
+	for _, issue := range issues {
+		if issue.Status == "open" {
+			openIssues = append(openIssues, issue)
+		}
+	}
+	if openIssues == nil {
+		openIssues = []Issue{}
+	}
+
+	return &LaunchData{
+		Feature:   *f,
+		Subtasks:  subtasks,
+		TaskItems: uncheckedItems,
+		Issues:    openIssues,
+	}, nil
+}
+
 type HandoffSubtask struct {
 	Title string
 	Done  int
