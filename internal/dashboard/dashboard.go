@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/sniffle6/claude-docket/internal/store"
 )
@@ -229,13 +231,6 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			projDir, _ = os.Getwd()
 		}
 
-		// Read launch command template
-		launchCmd := GetLaunchCmd(projDir)
-		if launchCmd == "" {
-			http.Error(w, "no launch command configured — set DOCKET_LAUNCH_CMD env var or create .docket/launch.toml", 400)
-			return
-		}
-
 		// Check for existing handoff file, use it as base if available
 		var promptContent string
 		handoffPath := filepath.Join(projDir, ".docket", "handoff", id+".md")
@@ -259,9 +254,21 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			return
 		}
 
-		// Substitute and execute
-		cmdStr := SubstituteLaunchCmd(launchCmd, promptPath, data.Feature.Title, id, projDir)
-		cmd := exec.Command("cmd", "/C", cmdStr)
+		// Write a .cmd launcher script to avoid nested quoting issues.
+		// The script has one command per line with clean quoting.
+		cmdScript := fmt.Sprintf("@echo off\r\ncd /d \"%s\"\r\nclaude --append-system-prompt-file \"%s\" \"Resume work on: %s (feature_id: %s). Check get_ready for current status.\"\r\n",
+			projDir, promptPath, data.Feature.Title, id)
+		cmdPath := filepath.Join(launchDir, id+".cmd")
+		if err := os.WriteFile(cmdPath, []byte(cmdScript), 0644); err != nil {
+			http.Error(w, "failed to write launch script: "+err.Error(), 500)
+			return
+		}
+
+		// Open the launcher in a new terminal window
+		cmd := exec.Command("cmd")
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			CmdLine: fmt.Sprintf(`cmd /C start "" wt cmd /k "%s"`, cmdPath),
+		}
 		cmd.Dir = projDir
 		if err := cmd.Start(); err != nil {
 			http.Error(w, "failed to launch: "+err.Error(), 500)
