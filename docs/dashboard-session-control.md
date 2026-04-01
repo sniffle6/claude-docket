@@ -19,10 +19,8 @@ Session state changes automatically based on hook events:
 
 1. **SessionStart hook** — Set to `working` (Claude session started)
 2. **PreToolUse hook** — Set to `working` (any tool used, including when resuming from `needs_attention`)
-3. **Stop hook** — Set to `needs_attention` if transcript contains errors, failed tests, or meaningful activity
+3. **Stop hook** — Set to `needs_attention` (Claude paused, waiting for user input)
 4. **SessionEnd hook** — Set to `idle` (session ended, handoff logged)
-
-If no work happened in a session, Stop hook may skip the `needs_attention` state and go straight to `idle`.
 
 ### Launch with Context
 

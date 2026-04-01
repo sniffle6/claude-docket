@@ -76,6 +76,11 @@ func (s *Store) MarkHandoffStale(id int64) {
 // SetSessionState updates the session_state of an open work session.
 // Returns an error if the session is not open.
 func (s *Store) SetSessionState(id int64, state string) error {
+	switch state {
+	case "idle", "working", "needs_attention":
+	default:
+		return fmt.Errorf("invalid session state: %q", state)
+	}
 	res, err := s.db.Exec(
 		`UPDATE work_sessions SET session_state = ? WHERE id = ? AND status = 'open'`,
 		state, id,

@@ -212,7 +212,7 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 
 		// Check for active session — prevent duplicate launches
 		states, _ := s.GetActiveSessionStates()
-		if state, ok := states[id]; ok && state == "working" {
+		if state, ok := states[id]; ok && (state == "working" || state == "needs_attention") {
 			http.Error(w, "session already active for this feature", 409)
 			return
 		}
@@ -261,7 +261,7 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 
 		// Substitute and execute
 		cmdStr := SubstituteLaunchCmd(launchCmd, promptPath, data.Feature.Title, id, projDir)
-		cmd := exec.Command("bash", "-c", cmdStr)
+		cmd := exec.Command("cmd", "/C", cmdStr)
 		cmd.Dir = projDir
 		if err := cmd.Start(); err != nil {
 			http.Error(w, "failed to launch: "+err.Error(), 500)
