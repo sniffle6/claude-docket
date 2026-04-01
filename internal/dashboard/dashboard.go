@@ -256,7 +256,7 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 
 		// Write a .cmd launcher script to avoid nested quoting issues.
 		// The script has one command per line with clean quoting.
-		cmdScript := fmt.Sprintf("@echo off\r\ncd /d \"%s\"\r\nclaude --append-system-prompt-file \"%s\" \"Resume work on: %s (feature_id: %s). Check get_ready for current status.\"\r\n",
+		cmdScript := fmt.Sprintf("@echo off\r\ncd /d \"%s\"\r\nclaude --dangerously-skip-permissions --append-system-prompt-file \"%s\" \"Resume work on: %s (feature_id: %s). Check get_ready for current status.\"\r\n",
 			projDir, promptPath, data.Feature.Title, id)
 		cmdPath := filepath.Join(launchDir, id+".cmd")
 		if err := os.WriteFile(cmdPath, []byte(cmdScript), 0644); err != nil {
