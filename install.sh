@@ -147,19 +147,27 @@ fi
 
 # --- Step 5: Clean up old installations ---
 
+# Remove old pre-plugin install location
 OLD_INSTALL="$HOME/.local/share/docket"
 if [ -d "$OLD_INSTALL" ]; then
-    echo ""
-    echo "NOTE: Old installation found at $OLD_INSTALL"
-    echo "The binary now lives inside the plugin dir. You can safely remove it:"
-    echo "  rm -rf $OLD_INSTALL"
+    echo "Removing old installation at $OLD_INSTALL..."
+    rm -rf "$OLD_INSTALL"
+    echo "Removed $OLD_INSTALL"
 fi
 
+# Remove old global MCP config entry if present
 MCP_FILE="$HOME/.claude/.mcp.json"
 if [ -f "$MCP_FILE" ] && grep -q '"docket"' "$MCP_FILE" 2>/dev/null; then
     echo ""
     echo "NOTE: docket is still in $MCP_FILE (old global config)."
     echo "The plugin now handles MCP registration. You can remove the docket entry from $MCP_FILE."
+fi
+
+# Invalidate Claude Code's plugin cache so it re-caches from marketplace
+CACHE_DIR="$HOME/.claude/plugins/cache/local/docket"
+if [ -d "$CACHE_DIR" ]; then
+    rm -rf "$CACHE_DIR"
+    echo "Deleted plugin cache at $CACHE_DIR (will be re-created on next session)"
 fi
 
 echo ""

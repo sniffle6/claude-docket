@@ -17,14 +17,19 @@ if tasklist 2>/dev/null | grep -qi "docket.exe"; then
   taskkill //F //IM docket.exe >>/dev/null 2>&1 && echo "Killed running docket.exe" || true
 fi
 
-# Copy binary to all known install locations
-for dest in \
-  "$PLUGIN_INSTALL/docket.exe" \
-  "$HOME/.claude/plugins/cache/local/docket/0.1.0/docket.exe" \
-  "$HOME/.local/share/docket/docket.exe"; do
-  if [ -d "$(dirname "$dest")" ]; then
-    cp plugin/docket.exe "$dest" && echo "Deployed to $dest"
-  fi
-done
+# Deploy binary to marketplace (the ONE correct location)
+if [ -d "$PLUGIN_INSTALL" ] || [ -L "$PLUGIN_INSTALL" ]; then
+  cp plugin/docket.exe "$PLUGIN_INSTALL/docket.exe" && echo "Deployed to $PLUGIN_INSTALL/docket.exe"
+else
+  echo "WARNING: Plugin install dir not found at $PLUGIN_INSTALL"
+  echo "Run 'bash install.sh --dev' first."
+fi
+
+# Invalidate Claude Code's plugin cache so it re-caches from marketplace
+CACHE_DIR="$HOME/.claude/plugins/cache/local/docket"
+if [ -d "$CACHE_DIR" ]; then
+  rm -rf "$CACHE_DIR"
+  echo "Deleted plugin cache at $CACHE_DIR (Claude Code will re-cache on restart)"
+fi
 
 echo "Run /reload-plugins to restart the MCP server."
