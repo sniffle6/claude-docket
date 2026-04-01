@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,10 +48,43 @@ type preToolUseDecision struct {
 }
 
 func runHook() {
+	var buf bytes.Buffer
+	if err := runHookFrom(os.Stdin, &buf); err != nil {
+		fmt.Fprintf(os.Stderr, "docket hook: %v\n", err)
+	}
+	buf.WriteTo(os.Stdout)
+	// Never exit non-zero — a hook failure is worse than doing nothing.
+}
+
+// safeDefault writes the appropriate fallback JSON for a hook event when
+// stdin cannot be decoded. eventHint is best-effort (may be empty).
+func safeDefault(w io.Writer, eventHint string) {
+	switch eventHint {
+	case "PreToolUse":
+		json.NewEncoder(w).Encode(preToolUseOutput{
+			HookSpecificOutput: &preToolUseDecision{PermissionDecision: "allow"},
+		})
+	case "Stop", "SessionEnd":
+		json.NewEncoder(w).Encode(stopHookOutput{})
+	default:
+		json.NewEncoder(w).Encode(hookOutput{Continue: true})
+	}
+}
+
+func runHookFrom(r io.Reader, w io.Writer) error {
 	var h hookInput
-	if err := json.NewDecoder(os.Stdin).Decode(&h); err != nil {
-		fmt.Fprintf(os.Stderr, "docket hook: decode stdin: %v\n", err)
-		os.Exit(1)
+	data, readErr := io.ReadAll(r)
+	if readErr != nil || len(data) == 0 {
+		fmt.Fprintf(os.Stderr, "docket hook: empty or unreadable stdin\n")
+		safeDefault(w, "")
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &h); err != nil {
+		eventHint := extractEventHint(data)
+		fmt.Fprintf(os.Stderr, "docket hook: decode stdin: %v (fallback: %s)\n", err, eventHint)
+		safeDefault(w, eventHint)
+		return nil
 	}
 
 	// Check .docket/ exists — if not, project hasn't been initialized
@@ -58,29 +92,52 @@ func runHook() {
 	if _, err := os.Stat(docketDir); os.IsNotExist(err) {
 		// Not a docket project — pass through silently
 		if h.HookEventName == "Stop" || h.HookEventName == "SessionEnd" {
-			json.NewEncoder(os.Stdout).Encode(stopHookOutput{})
+			json.NewEncoder(w).Encode(stopHookOutput{})
 		} else {
-			json.NewEncoder(os.Stdout).Encode(hookOutput{Continue: true})
+			json.NewEncoder(w).Encode(hookOutput{Continue: true})
 		}
-		return
+		return nil
 	}
 
 	switch h.HookEventName {
 	case "PreToolUse":
-		handlePreToolUse(&h, os.Stdout)
+		handlePreToolUse(&h, w)
 	case "SessionStart":
-		handleSessionStart(&h, os.Stdout)
+		handleSessionStart(&h, w)
 	case "PostToolUse":
-		handlePostToolUse(&h, os.Stdout)
+		handlePostToolUse(&h, w)
 	case "Stop":
-		handleStop(&h, os.Stdout)
+		handleStop(&h, w)
 	case "PreCompact":
-		handlePreCompact(&h, os.Stdout)
+		handlePreCompact(&h, w)
 	case "SessionEnd":
-		handleSessionEnd(&h, os.Stdout)
+		handleSessionEnd(&h, w)
 	default:
-		json.NewEncoder(os.Stdout).Encode(hookOutput{Continue: true})
+		json.NewEncoder(w).Encode(hookOutput{Continue: true})
 	}
+	return nil
+}
+
+// extractEventHint tries to pull "hook_event_name" from partial/malformed JSON
+// using simple string matching. Returns empty string if not found.
+func extractEventHint(data []byte) string {
+	s := string(data)
+	key := `"hook_event_name"`
+	idx := strings.Index(s, key)
+	if idx < 0 {
+		return ""
+	}
+	rest := s[idx+len(key):]
+	rest = strings.TrimLeft(rest, " \t\n\r:")
+	if len(rest) == 0 || rest[0] != '"' {
+		return ""
+	}
+	rest = rest[1:]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return rest
+	}
+	return rest[:end]
 }
 
 func handleSessionStart(h *hookInput, w io.Writer) {
@@ -190,6 +247,10 @@ func handleStop(h *hookInput, w io.Writer) {
 	}
 
 	s.SetSessionState(ws.ID, "needs_attention")
+
+	// Write sentinel so PostToolUse can skip SQLite open in the common case
+	sentinelPath := filepath.Join(h.CWD, ".docket", "needs-attention")
+	os.WriteFile(sentinelPath, []byte{}, 0644)
 
 	delta := parseTranscriptDelta(h)
 	if !isDeltaMeaningful(h.CWD, delta) {
@@ -303,6 +364,7 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.Remove(commitsPath)
+	os.Remove(filepath.Join(h.CWD, ".docket", "needs-attention"))
 
 	s.SetSessionState(ws.ID, "idle")
 	s.CloseWorkSession(ws.ID)
@@ -320,19 +382,6 @@ func handlePreToolUse(h *hookInput, w io.Writer) {
 		return
 	}
 	defer s.Close()
-
-	// Flip session state back to working if Claude resumes after a stop
-	if ws, wsErr := s.GetActiveWorkSession(); wsErr == nil {
-		if ws.SessionState == "needs_attention" {
-			s.SetSessionState(ws.ID, "working")
-		}
-	}
-
-	// Agent-specific nudge: only run for Agent tool dispatches
-	if h.ToolName != "Agent" {
-		json.NewEncoder(w).Encode(allow)
-		return
-	}
 
 	// Check sentinel — already nudged this session
 	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
@@ -410,6 +459,19 @@ func formatUncheckedTasks(s *store.Store, featureID string) string {
 
 func handlePostToolUse(h *hookInput, w io.Writer) {
 	out := hookOutput{Continue: true}
+
+	// Flip session state back to working if Claude resumes after a stop.
+	// Check sentinel file first to avoid opening SQLite on every tool call.
+	sentinelPath := filepath.Join(h.CWD, ".docket", "needs-attention")
+	if _, statErr := os.Stat(sentinelPath); statErr == nil {
+		os.Remove(sentinelPath)
+		if s, err := store.Open(h.CWD); err == nil {
+			if ws, wsErr := s.GetActiveWorkSession(); wsErr == nil {
+				s.SetSessionState(ws.ID, "working")
+			}
+			s.Close()
+		}
+	}
 
 	if !strings.Contains(h.ToolInput.Command, "git commit") {
 		json.NewEncoder(w).Encode(out)

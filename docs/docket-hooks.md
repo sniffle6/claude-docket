@@ -15,7 +15,7 @@ Docket automatically tracks session activity using Claude Code lifecycle hooks a
 The plugin declares hooks in `plugin/hooks/hooks.json`. Claude Code fires these automatically:
 
 1. `SessionStart` → opens work session, resets transcript offset, injects feature context
-2. `PostToolUse` (Bash only) → detects `git commit`, appends to commits.log, auto-imports plan files, lists unchecked task items in system message (capped at 10)
+2. `PostToolUse` (all tools) → flips session state `needs_attention` → `working` when Claude resumes after a stop. For Bash tool calls containing `git commit`, also appends to commits.log, auto-imports plan files, lists unchecked task items in system message (capped at 10)
 3. `PreToolUse` (Agent only) → reminds to set up docket tracking before dispatching subagents
 4. `Stop` → parses transcript delta since last checkpoint, enqueues checkpoint job if meaningful, always allows stop
 5. `PreCompact` → forces a checkpoint (always enqueues, no threshold check)
@@ -57,6 +57,18 @@ Stop only enqueues a checkpoint if at least one of:
 - `plugin/hooks/hooks.json` — hook declarations
 - `plugin/skills/checkpoint/SKILL.md` — /checkpoint skill
 - `plugin/skills/end-session/SKILL.md` — /end-session skill
+
+## Stdin resilience
+
+The hook binary never exits non-zero. When stdin is empty, EOF, or malformed JSON (which can happen during early session startup when Claude Code fires hooks before the pipe is fully set up), the hook emits a safe default JSON response and exits 0:
+
+- **PreToolUse** → `{"hookSpecificOutput":{"permissionDecision":"allow"}}` (don't block tools)
+- **Stop / SessionEnd** → `{}` (don't interfere with stop)
+- **Unknown / empty** → `{"continue":true}` (pass through)
+
+For truncated JSON, `extractEventHint` does best-effort string matching on `"hook_event_name"` to pick the right default.
+
+The core logic lives in `runHookFrom(r io.Reader, w io.Writer)` which is testable without real stdin/stdout. The `runHook()` entry point is a thin wrapper that always exits 0.
 
 ## Gotchas
 

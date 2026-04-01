@@ -1218,3 +1218,225 @@ func TestPostToolUsePlanImportShowsUncheckedTasks(t *testing.T) {
 		t.Errorf("expected unchecked task list after plan import, got: %s", out.SystemMessage)
 	}
 }
+
+// --- PostToolUse session-state flip tests ---
+
+func TestPostToolUseFlipsSessionState(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := s.AddFeature("State Flip Feature", "testing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := "in_progress"
+	s.UpdateFeature(f.ID, store.FeatureUpdate{Status: &status})
+	ws, err := s.OpenWorkSession(f.ID, "sess-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetSessionState(ws.ID, "needs_attention")
+	s.Close()
+
+	// Write sentinel file (normally written by Stop hook)
+	os.WriteFile(filepath.Join(dir, ".docket", "needs-attention"), []byte{}, 0644)
+
+	h := &hookInput{
+		SessionID:     "sess-1",
+		CWD:           dir,
+		HookEventName: "PostToolUse",
+		ToolName:      "Read",
+		ToolInput:     toolInput{Command: ""},
+	}
+
+	var buf bytes.Buffer
+	handlePostToolUse(h, &buf)
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true")
+	}
+
+	// Verify state was flipped
+	s2, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	ws2, err := s2.GetActiveWorkSession()
+	if err != nil {
+		t.Fatalf("expected active work session: %v", err)
+	}
+	if ws2.SessionState != "working" {
+		t.Errorf("expected session_state=working, got %s", ws2.SessionState)
+	}
+
+	// Verify sentinel was removed
+	if _, err := os.Stat(filepath.Join(dir, ".docket", "needs-attention")); !os.IsNotExist(err) {
+		t.Error("expected needs-attention sentinel to be removed after flip")
+	}
+}
+
+func TestPostToolUseNonDocketProjectPassthrough(t *testing.T) {
+	dir := t.TempDir()
+
+	h := &hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "PostToolUse",
+		ToolName:      "Grep",
+		ToolInput:     toolInput{},
+	}
+
+	var buf bytes.Buffer
+	handlePostToolUse(h, &buf)
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("decode output: %v", err)
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true")
+	}
+	if out.SystemMessage != "" {
+		t.Errorf("expected no systemMessage, got: %s", out.SystemMessage)
+	}
+}
+
+// --- runHookFrom resilience tests ---
+
+func TestRunHookEmptyStdin(t *testing.T) {
+	r := strings.NewReader("")
+	var buf bytes.Buffer
+	err := runHookFrom(r, &buf)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw: %s)", err, buf.String())
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true for empty stdin fallback")
+	}
+}
+
+func TestRunHookTruncatedJSON(t *testing.T) {
+	r := strings.NewReader(`{"hook_event_name":"PreTool`)
+	var buf bytes.Buffer
+	err := runHookFrom(r, &buf)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	if !json.Valid(buf.Bytes()) {
+		t.Fatalf("output is not valid JSON: %s", buf.String())
+	}
+}
+
+func TestRunHookPreToolUseFallback(t *testing.T) {
+	r := strings.NewReader(`{"hook_event_name":"PreToolUse","tool_name":"ToolSe`)
+	var buf bytes.Buffer
+	err := runHookFrom(r, &buf)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	var out preToolUseOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid preToolUseOutput JSON: %v (raw: %s)", err, buf.String())
+	}
+	if out.HookSpecificOutput == nil {
+		t.Fatal("expected hookSpecificOutput to be set")
+	}
+	if out.HookSpecificOutput.PermissionDecision != "allow" {
+		t.Errorf("expected 'allow', got %q", out.HookSpecificOutput.PermissionDecision)
+	}
+}
+
+func TestRunHookStopFallback(t *testing.T) {
+	r := strings.NewReader(`{"hook_event_name":"Stop","session_id":"abc`)
+	var buf bytes.Buffer
+	runHookFrom(r, &buf)
+
+	var out stopHookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw: %s)", err, buf.String())
+	}
+	if out.Decision != "" || out.Reason != "" {
+		t.Errorf("expected empty stopHookOutput, got: %+v", out)
+	}
+}
+
+func TestRunHookSessionEndFallback(t *testing.T) {
+	r := strings.NewReader(`{"hook_event_name":"SessionEnd"`)
+	var buf bytes.Buffer
+	runHookFrom(r, &buf)
+
+	var out stopHookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw: %s)", err, buf.String())
+	}
+	if out.Decision != "" || out.Reason != "" {
+		t.Errorf("expected empty stopHookOutput, got: %+v", out)
+	}
+}
+
+func TestRunHookValidJSONPassesThrough(t *testing.T) {
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+
+	input := hookInput{
+		SessionID:     "test-session",
+		CWD:           dir,
+		HookEventName: "SessionStart",
+	}
+	inputJSON, _ := json.Marshal(input)
+
+	r := bytes.NewReader(inputJSON)
+	var buf bytes.Buffer
+	err = runHookFrom(r, &buf)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	var out hookOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		t.Fatalf("output is not valid JSON: %v (raw: %s)", err, buf.String())
+	}
+	if !out.Continue {
+		t.Error("expected Continue to be true")
+	}
+}
+
+func TestExtractEventHint(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"full json", `{"hook_event_name":"PreToolUse","tool_name":"Agent"}`, "PreToolUse"},
+		{"truncated value", `{"hook_event_name":"SessionSt`, "SessionSt"},
+		{"no event", `{"session_id":"abc"`, ""},
+		{"empty", ``, ""},
+		{"stop event", `{"hook_event_name":"Stop","cwd":"/tmp"}`, "Stop"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractEventHint([]byte(tt.input))
+			if got != tt.want {
+				t.Errorf("extractEventHint(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
