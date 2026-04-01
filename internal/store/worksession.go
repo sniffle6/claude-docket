@@ -14,6 +14,7 @@ type WorkSession struct {
 	StartedAt       time.Time  `json:"started_at"`
 	EndedAt         *time.Time `json:"ended_at"`
 	HandoffStale    bool       `json:"handoff_stale"`
+	LastHeartbeat   *time.Time `json:"last_heartbeat"`
 }
 
 // OpenWorkSession opens a new work session or resumes an existing open one
@@ -21,7 +22,7 @@ type WorkSession struct {
 func (s *Store) OpenWorkSession(featureID, claudeSessionID string) (*WorkSession, error) {
 	// Try to resume existing open session for same feature+claude session
 	row := s.db.QueryRow(
-		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale
+		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale, last_heartbeat
          FROM work_sessions WHERE feature_id = ? AND claude_session_id = ? AND status = 'open'`,
 		featureID, claudeSessionID,
 	)
@@ -35,8 +36,8 @@ func (s *Store) OpenWorkSession(featureID, claudeSessionID string) (*WorkSession
 
 	now := time.Now().UTC()
 	res, err := s.db.Exec(
-		`INSERT INTO work_sessions (feature_id, claude_session_id, status, started_at) VALUES (?, ?, 'open', ?)`,
-		featureID, claudeSessionID, now,
+		`INSERT INTO work_sessions (feature_id, claude_session_id, status, started_at, last_heartbeat) VALUES (?, ?, 'open', ?, ?)`,
+		featureID, claudeSessionID, now, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert work session: %w", err)
@@ -47,7 +48,7 @@ func (s *Store) OpenWorkSession(featureID, claudeSessionID string) (*WorkSession
 
 func (s *Store) GetWorkSession(id int64) (*WorkSession, error) {
 	row := s.db.QueryRow(
-		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale
+		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale, last_heartbeat
          FROM work_sessions WHERE id = ?`, id,
 	)
 	return scanWorkSession(row)
@@ -56,7 +57,7 @@ func (s *Store) GetWorkSession(id int64) (*WorkSession, error) {
 // GetActiveWorkSession returns the single open work session, or error if none.
 func (s *Store) GetActiveWorkSession() (*WorkSession, error) {
 	row := s.db.QueryRow(
-		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale
+		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale, last_heartbeat
          FROM work_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1`,
 	)
 	return scanWorkSession(row)
@@ -122,10 +123,15 @@ type scannable interface {
 	Scan(dest ...any) error
 }
 
+// TouchHeartbeat updates the last_heartbeat timestamp for a work session.
+func (s *Store) TouchHeartbeat(id int64) {
+	s.db.Exec(`UPDATE work_sessions SET last_heartbeat = datetime('now') WHERE id = ?`, id)
+}
+
 func scanWorkSession(row scannable) (*WorkSession, error) {
 	var ws WorkSession
 	var stale int
-	err := row.Scan(&ws.ID, &ws.FeatureID, &ws.ClaudeSessionID, &ws.Status, &ws.SessionState, &ws.StartedAt, &ws.EndedAt, &stale)
+	err := row.Scan(&ws.ID, &ws.FeatureID, &ws.ClaudeSessionID, &ws.Status, &ws.SessionState, &ws.StartedAt, &ws.EndedAt, &stale, &ws.LastHeartbeat)
 	if err != nil {
 		return nil, err
 	}

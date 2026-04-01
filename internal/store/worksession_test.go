@@ -164,3 +164,29 @@ func TestGetActiveSessionStates_ExcludesIdle(t *testing.T) {
 		t.Error("idle sessions should not appear in active session states")
 	}
 }
+
+func TestTouchHeartbeat(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Auth System", "token auth")
+	ws, _ := s.OpenWorkSession("auth-system", "session-123")
+
+	s.TouchHeartbeat(ws.ID)
+
+	ws2, _ := s.GetWorkSession(ws.ID)
+	if ws2.LastHeartbeat == nil {
+		t.Fatal("expected LastHeartbeat to be set after TouchHeartbeat")
+	}
+}
+
+func TestOpenWorkSessionSetsHeartbeat(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Auth System", "token auth")
+
+	ws, err := s.OpenWorkSession("auth-system", "session-123")
+	if err != nil {
+		t.Fatalf("OpenWorkSession: %v", err)
+	}
+	if ws.LastHeartbeat == nil {
+		t.Fatal("expected LastHeartbeat to be set on new work session")
+	}
+}
