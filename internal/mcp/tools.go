@@ -121,6 +121,12 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 		mcp.WithString("feature_id", mcp.Description("Filter to one feature. Omit for all open issues.")),
 	), listIssuesHandler(s))
 
+	srv.AddTool(mcp.NewTool("add_note",
+		mcp.WithDescription("Append a note to a feature card — findings, context, observations discovered during work. Use when told to 'add findings', 'note this', 'save context', or when you discover something worth recording for future sessions."),
+		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID")),
+		mcp.WithString("content", mcp.Required(), mcp.Description("The note content — what was found, observed, or worth remembering")),
+	), addNoteHandler(s))
+
 	srv.AddTool(mcp.NewTool("add_decision",
 		mcp.WithDescription("Log a decision on a feature. Records what approach was considered, whether it was accepted or rejected, and why. Prevents re-exploring dead ends across sessions."),
 		mcp.WithString("feature_id", mcp.Required(), mcp.Description("Feature slug ID")),

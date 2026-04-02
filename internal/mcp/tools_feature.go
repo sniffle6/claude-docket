@@ -218,12 +218,17 @@ func getFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			Subtasks  []store.Subtask  `json:"subtasks"`
 			Sessions  []store.Session  `json:"sessions"`
 			Decisions []store.Decision `json:"decisions"`
+			Notes     []store.Note     `json:"notes"`
 		}
 		decisions, _ := s.GetDecisionsForFeature(id)
 		if decisions == nil {
 			decisions = []store.Decision{}
 		}
-		full := fullFeature{Feature: *f, Subtasks: subtasks, Sessions: sessions, Decisions: decisions}
+		notes, _ := s.GetNotesForFeature(id)
+		if notes == nil {
+			notes = []store.Note{}
+		}
+		full := fullFeature{Feature: *f, Subtasks: subtasks, Sessions: sessions, Decisions: decisions, Notes: notes}
 		data, _ := json.MarshalIndent(full, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
 	}
@@ -283,6 +288,18 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 			}
 			if nextTask != "" {
 				fmt.Fprintf(&b, "Next: %s\n", nextTask)
+			}
+		}
+
+		notes, _ := s.GetNotesForFeature(id)
+		if len(notes) > 0 {
+			b.WriteString("Notes:\n")
+			for _, n := range notes {
+				snippet := n.Content
+				if len(snippet) > 80 {
+					snippet = snippet[:80] + "..."
+				}
+				fmt.Fprintf(&b, "  - %s\n", snippet)
 			}
 		}
 
@@ -383,16 +400,22 @@ func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 			Subtasks  []store.Subtask  `json:"subtasks"`
 			Sessions  []store.Session  `json:"sessions"`
 			Decisions []store.Decision `json:"decisions"`
+			Notes     []store.Note     `json:"notes"`
 		}
 		decisions, _ := s.GetDecisionsForFeature(id)
 		if decisions == nil {
 			decisions = []store.Decision{}
+		}
+		notes, _ := s.GetNotesForFeature(id)
+		if notes == nil {
+			notes = []store.Note{}
 		}
 		data, _ := json.MarshalIndent(fullDump{
 			Feature:   *f,
 			Subtasks:  subtasks,
 			Sessions:  sessions,
 			Decisions: decisions,
+			Notes:     notes,
 		}, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
 	}

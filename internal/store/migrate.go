@@ -171,6 +171,15 @@ const schemaV14 = `
 ALTER TABLE features ADD COLUMN spec_path TEXT NOT NULL DEFAULT '';
 `
 
+const schemaV15 = `
+CREATE TABLE IF NOT EXISTS notes (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	feature_id TEXT NOT NULL REFERENCES features(id),
+	content TEXT NOT NULL,
+	created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -201,5 +210,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV13)
 	// v14: add spec_path column to features
 	db.Exec(schemaV14)
+	// v15: add notes table
+	db.Exec(schemaV15)
 	return nil
 }

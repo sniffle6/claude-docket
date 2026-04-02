@@ -119,7 +119,11 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		if issues == nil {
 			issues = []store.Issue{}
 		}
-		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions, "decisions": decisions, "issues": issues})
+		notes, _ := s.GetNotesForFeature(id)
+		if notes == nil {
+			notes = []store.Note{}
+		}
+		writeJSON(w, map[string]any{"feature": f, "subtasks": subtasks, "sessions": sessions, "decisions": decisions, "issues": issues, "notes": notes})
 	})
 
 	mux.HandleFunc("PATCH /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +138,23 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			return
 		}
 		writeJSON(w, map[string]string{"ok": "true"})
+	})
+
+	mux.HandleFunc("POST /api/notes", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			FeatureID string `json:"feature_id"`
+			Content   string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		note, err := s.AddNote(body.FeatureID, body.Content)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, note)
 	})
 
 	mux.HandleFunc("POST /api/issues", func(w http.ResponseWriter, r *http.Request) {

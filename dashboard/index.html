@@ -631,6 +631,16 @@
   .decision-approach { color: var(--text); }
   .decision-reason { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+  /* Notes */
+  .note-item {
+    padding: 8px 0;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .note-item:first-child { border-top: none; }
+  .note-content { color: var(--text); white-space: pre-wrap; }
+  .note-time { color: var(--muted); font-size: 11px; margin-top: 4px; }
+
   .issue-item {
     display: flex;
     gap: 10px;
@@ -1026,24 +1036,43 @@ async function showDetail(id) {
     panel.appendChild(loCallout);
   }
 
-  // Your Notes
+  // Notes — append form + entries list
   var notesLabel = document.createElement('div');
   notesLabel.className = 'panel-section-label';
-  notesLabel.textContent = 'Your Notes';
+  var notesList = data.notes || [];
+  notesLabel.textContent = 'Notes' + (notesList.length > 0 ? ' (' + notesList.length + ')' : '');
   panel.appendChild(notesLabel);
   var ta = document.createElement('textarea');
   ta.className = 'notes-textarea';
   ta.id = 'notesInput';
-  ta.placeholder = 'Add notes, thoughts, or ideas for Claude...';
-  ta.value = f.notes || '';
+  ta.placeholder = 'Add a note — findings, context, observations...';
+  ta.rows = 2;
   panel.appendChild(ta);
   var saveBtn = document.createElement('button');
   saveBtn.className = 'save-btn';
-  saveBtn.textContent = 'Save';
+  saveBtn.textContent = 'Save Note';
   (function(fid) {
-    saveBtn.onclick = function() { saveNotes(fid); };
+    saveBtn.onclick = function() { saveNote(fid); };
   })(f.id);
   panel.appendChild(saveBtn);
+
+  for (var ni = 0; ni < notesList.length; ni++) {
+    var note = notesList[ni];
+    var noteDiv = document.createElement('div');
+    noteDiv.className = 'note-item';
+
+    var contentDiv = document.createElement('div');
+    contentDiv.className = 'note-content';
+    contentDiv.textContent = note.content;
+    noteDiv.appendChild(contentDiv);
+
+    var timeDiv = document.createElement('div');
+    timeDiv.className = 'note-time';
+    timeDiv.textContent = new Date(note.created_at).toLocaleString();
+    noteDiv.appendChild(timeDiv);
+
+    panel.appendChild(noteDiv);
+  }
 
   // Tasks
   if (subtasks.length > 0) {
@@ -1358,14 +1387,18 @@ function toggleActivity(section, arrow) {
   }
 }
 
-async function saveNotes(id) {
-  var val = document.getElementById('notesInput').value;
-  await fetch(API + '/api/features/' + id, {
-    method: 'PATCH',
+async function saveNote(featureId) {
+  var input = document.getElementById('notesInput');
+  var val = input.value.trim();
+  if (!val) return;
+  await fetch(API + '/api/notes', {
+    method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ notes: val }),
+    body: JSON.stringify({ feature_id: featureId, content: val }),
   });
+  input.value = '';
   load();
+  if (currentPanelId) showDetail(currentPanelId);
 }
 
 async function submitIssue(featureId, description, taskItemId) {
