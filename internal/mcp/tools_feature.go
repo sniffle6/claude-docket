@@ -42,6 +42,9 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 			s.UpdateFeature(f.ID, store.FeatureUpdate{Type: &typ})
 		}
 		var tagWarning string
+		if specPath, ok := argString(args, "spec_path"); ok && specPath != "" {
+			s.UpdateFeature(f.ID, store.FeatureUpdate{SpecPath: &specPath})
+		}
 		if tagStr, ok := argString(args, "tags"); ok && tagStr != "" {
 			parts := strings.Split(tagStr, ",")
 			var tags []string
@@ -96,6 +99,9 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if v, ok := argString(args, "worktree_path"); ok {
 			u.WorktreePath = &v
+		}
+		if v, ok := argString(args, "spec_path"); ok {
+			u.SpecPath = &v
 		}
 		if v, ok := argString(args, "key_files"); ok && v != "" {
 			files := strings.Split(v, ",")
@@ -250,6 +256,9 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if f.Notes != "" {
 			fmt.Fprintf(&b, "User notes: %s\n", f.Notes)
+		}
+		if f.SpecPath != "" {
+			fmt.Fprintf(&b, "Spec: %s\n", f.SpecPath)
 		}
 
 		done, total, _ := s.GetFeatureProgress(id)

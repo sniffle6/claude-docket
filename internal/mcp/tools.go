@@ -18,6 +18,7 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 		mcp.WithString("notes", mcp.Description("User notes — thoughts, ideas, context for Claude to read when picking up this feature")),
 		mcp.WithString("type", mcp.Description("Feature type: feature, bugfix, chore, spike. Auto-creates subtasks from template when set.")),
 		mcp.WithString("tags", mcp.Description("Comma-separated tags (e.g., 'auth,frontend'). New tags trigger a warning listing existing tags.")),
+		mcp.WithString("spec_path", mcp.Description("Relative path to the design spec file (e.g., 'docs/superpowers/specs/2026-04-01-foo-design.md')")),
 	), addFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("update_feature",
@@ -31,6 +32,7 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 		mcp.WithString("worktree_path", mcp.Description("Absolute path to git worktree")),
 		mcp.WithString("key_files", mcp.Description("Comma-separated list of key file paths for this feature")),
 		mcp.WithString("tags", mcp.Description("Comma-separated tags — replaces all existing tags. New tags trigger a warning.")),
+		mcp.WithString("spec_path", mcp.Description("Relative path to the design spec file (e.g., 'docs/superpowers/specs/2026-04-01-foo-design.md')")),
 		mcp.WithBoolean("force", mcp.Description("Force status=done even with unchecked task items or open issues. Logs a decision.")),
 		mcp.WithString("force_reason", mcp.Description("Reason for force-completing (logged as a decision)")),
 	), updateFeatureHandler(s))
