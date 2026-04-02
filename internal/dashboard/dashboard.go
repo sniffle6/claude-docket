@@ -260,7 +260,7 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		if openSession != nil {
 			// Verify the terminal window is actually alive (Windows-specific;
 			// Unix always returns true and relies on focus command exit codes)
-			if !isWindowAlive(id) {
+			if !isWindowAlive(projDir, id) {
 				// Window is gone — clean up stale session, fall through to launch
 				s.CloseWorkSession(openSession.ID)
 				openSession = nil
