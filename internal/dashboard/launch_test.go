@@ -83,14 +83,14 @@ func TestReadLaunchConfig_ProjectLevel(t *testing.T) {
 	docketDir := filepath.Join(dir, ".docket")
 	os.MkdirAll(docketDir, 0755)
 	os.WriteFile(filepath.Join(docketDir, "launch.toml"), []byte(
-		"launch = \"wt -w docket-{{feature_id}} cmd /k {{script_path}}\"\nfocus = \"wt -w docket-{{feature_id}}\"\n",
+		"launch = \"wt -w docket-{{feature_id}} cmd /k {{script_path}}\"\nfocus = \"wt -w docket-{{feature_id}} focus-tab --target 0\"\n",
 	), 0644)
 
 	cfg := ReadLaunchConfig(dir)
 	if cfg.Launch != "wt -w docket-{{feature_id}} cmd /k {{script_path}}" {
 		t.Errorf("launch = %q", cfg.Launch)
 	}
-	if cfg.Focus != "wt -w docket-{{feature_id}}" {
+	if cfg.Focus != "wt -w docket-{{feature_id}} focus-tab --target 0" {
 		t.Errorf("focus = %q", cfg.Focus)
 	}
 }

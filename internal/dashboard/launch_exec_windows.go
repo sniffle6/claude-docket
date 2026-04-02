@@ -31,9 +31,11 @@ func launchInTerminal(projDir, promptPath, featureTitle, featureID, launchDir st
 	if cfg.Launch != "" {
 		cmdLine = "cmd /C " + SubstituteTemplate(cfg.Launch, vars, "windows")
 	} else if _, err := exec.LookPath("wt"); err == nil {
+		// Default: Windows Terminal with named window (no start wrapper needed)
 		tmpl := `wt -w docket-{{feature_id}} --title {{feature_title}} cmd /k {{script_path}}`
-		cmdLine = `cmd /C start "" ` + SubstituteTemplate(tmpl, vars, "windows")
+		cmdLine = "cmd /C " + SubstituteTemplate(tmpl, vars, "windows")
 	} else {
+		// Fallback: no wt — use start to open in a new window
 		tmpl := `cmd /c start {{feature_title}} cmd /k {{script_path}}`
 		cmdLine = SubstituteTemplate(tmpl, vars, "windows")
 	}
