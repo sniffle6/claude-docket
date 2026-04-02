@@ -8,14 +8,16 @@ import (
 	"syscall"
 )
 
-// isWindowAlive checks if a terminal window with a title containing "docket-<featureID>"
-// exists. Uses PowerShell to search process window titles.
+// isWindowAlive checks if the terminal process launched for a feature is still running.
+// Uses WMIC to check if any cmd.exe process has our feature-specific .cmd script in
+// its command line arguments.
 func isWindowAlive(featureID string) bool {
-	ps := fmt.Sprintf(
-		`if(Get-Process|Where-Object{$_.MainWindowTitle -like '*docket-%s*' -and $_.MainWindowHandle -ne 0}|Select-Object -First 1){exit 0}else{exit 1}`,
-		featureID,
-	)
-	cmd := exec.Command("powershell", "-NoProfile", "-Command", ps)
+	// Look for a cmd.exe whose command line contains our launcher script name
+	scriptName := featureID + ".cmd"
+	cmd := exec.Command("cmd")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: fmt.Sprintf(`cmd /C wmic process where "name='cmd.exe'" get commandline 2>nul | findstr /I "%s"`, scriptName),
+	}
 	return cmd.Run() == nil
 }
 
