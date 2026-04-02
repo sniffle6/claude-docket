@@ -84,8 +84,24 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			if info, ok := sessionStates[f.ID]; ok {
 				fp.SessionState = info.State
 				fp.LastHeartbeat = info.LastHeartbeat
-			} else {
-				fp.SessionState = "idle"
+			}
+
+			// Check if there's an open session (including idle ones not in sessionStates)
+			if openSess, err := s.GetOpenWorkSessionForFeature(f.ID); err == nil && openSess != nil {
+				if fp.SessionState == "" {
+					fp.SessionState = "idle"
+				}
+				// Verify the terminal is actually alive via PID file
+				pDir := devDir
+				if pDir == "" {
+					pDir, _ = os.Getwd()
+				}
+				if !isWindowAlive(pDir, f.ID) {
+					// Terminal is dead — clean up and show no session
+					s.CloseWorkSession(openSess.ID)
+					fp.SessionState = ""
+					fp.LastHeartbeat = nil
+				}
 			}
 
 			result = append(result, fp)
