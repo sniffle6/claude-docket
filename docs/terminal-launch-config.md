@@ -14,7 +14,7 @@ Format:
 
 ```toml
 launch = "wt -w docket-{{feature_id}} --title {{feature_title}} cmd /k {{script_path}}"
-focus = "wt -w docket-{{feature_id}}"
+focus = "wt -w docket-{{feature_id}} focus-tab --target 0"
 ```
 
 ### Template Variables
