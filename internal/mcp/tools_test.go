@@ -1,8 +1,11 @@
 package mcp
 
 import (
+	"context"
+	"strings"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
@@ -243,6 +246,18 @@ func TestDeleteFeature(t *testing.T) {
 	if len(issues) != 0 {
 		t.Errorf("expected 0 issues, got %d", len(issues))
 	}
+
+	// Verify task items gone
+	items, _ := s.GetTaskItemsForSubtask(st.ID)
+	if len(items) != 0 {
+		t.Errorf("expected 0 task items, got %d", len(items))
+	}
+
+	// Verify work sessions gone
+	ws, _ := s.GetOpenWorkSessionForFeature(f.ID)
+	if ws != nil {
+		t.Error("expected no open work session after delete")
+	}
 }
 
 func TestDeleteFeatureNotFound(t *testing.T) {
@@ -251,5 +266,50 @@ func TestDeleteFeatureNotFound(t *testing.T) {
 	err := s.DeleteFeature("nonexistent")
 	if err == nil {
 		t.Error("expected error deleting nonexistent feature")
+	}
+}
+
+func TestDeleteFeatureMCPConfirmRequired(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Confirm Test", "")
+
+	handler := deleteFeatureHandler(s)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"id":      "confirm-test",
+		"confirm": false,
+	}
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "confirm") {
+		t.Errorf("expected confirmation message, got: %s", text)
+	}
+}
+
+func TestDeleteFeatureMCPSuccess(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Delete Via MCP", "")
+
+	handler := deleteFeatureHandler(s)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{
+		"id":      "delete-via-mcp",
+		"confirm": true,
+	}
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "Deleted") {
+		t.Errorf("expected success message, got: %s", text)
+	}
+
+	_, getErr := s.GetFeature("delete-via-mcp")
+	if getErr == nil {
+		t.Error("feature should be deleted")
 	}
 }

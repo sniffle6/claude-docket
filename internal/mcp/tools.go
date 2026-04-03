@@ -9,7 +9,7 @@ import (
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
-func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
+func registerTools(srv *server.MCPServer, s *store.Store, projectDir string, onCheckpoint func()) {
 	srv.AddTool(mcp.NewTool("add_feature",
 		mcp.WithDescription("Create a new feature to track. Returns the generated slug ID."),
 		mcp.WithString("title", mcp.Required(), mcp.Description("Feature title (e.g., 'Bluetooth Panel')")),
@@ -36,6 +36,12 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 		mcp.WithBoolean("force", mcp.Description("Force status=done even with unchecked task items or open issues. Logs a decision.")),
 		mcp.WithString("force_reason", mcp.Description("Reason for force-completing (logged as a decision)")),
 	), updateFeatureHandler(s))
+
+	srv.AddTool(mcp.NewTool("delete_feature",
+		mcp.WithDescription("Permanently delete a feature and all its data (subtasks, decisions, notes, issues, sessions). Irreversible."),
+		mcp.WithString("id", mcp.Required(), mcp.Description("Feature slug ID")),
+		mcp.WithBoolean("confirm", mcp.Required(), mcp.Description("Must be true to confirm deletion")),
+	), deleteFeatureHandler(s))
 
 	srv.AddTool(mcp.NewTool("list_features",
 		mcp.WithDescription("List features. Returns compact summaries: ID, title, status, tags, left_off snippet. Excludes archived by default."),
@@ -138,7 +144,7 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 	srv.AddTool(mcp.NewTool("checkpoint",
 		mcp.WithDescription("Force a checkpoint of the current session's semantic and mechanical state. Enqueues a background summarization job. Pass end_session=true to also close the work session and write the handoff file."),
 		mcp.WithBoolean("end_session", mcp.Description("If true, close the work session and write handoff after checkpointing. Default: false.")),
-	), checkpointHandler(s, projectDir))
+	), checkpointHandler(s, projectDir, onCheckpoint))
 
 	srv.AddTool(mcp.NewTool("search",
 		mcp.WithDescription("Search across all feature content: descriptions, decisions, issues, notes, sessions, tasks, and checkpoint observations. Supports FTS5 syntax: plain words, \"phrase match\", prefix*, AND/OR operators."),

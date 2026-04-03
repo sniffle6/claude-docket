@@ -45,6 +45,9 @@ func addFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		if specPath, ok := argString(args, "spec_path"); ok && specPath != "" {
 			s.UpdateFeature(f.ID, store.FeatureUpdate{SpecPath: &specPath})
 		}
+		if planPath, ok := argString(args, "plan_path"); ok && planPath != "" {
+			s.UpdateFeature(f.ID, store.FeatureUpdate{PlanPath: &planPath})
+		}
 		if tagStr, ok := argString(args, "tags"); ok && tagStr != "" {
 			parts := strings.Split(tagStr, ",")
 			var tags []string
@@ -102,6 +105,9 @@ func updateFeatureHandler(s *store.Store) server.ToolHandlerFunc {
 		}
 		if v, ok := argString(args, "spec_path"); ok {
 			u.SpecPath = &v
+		}
+		if v, ok := argString(args, "plan_path"); ok {
+			u.PlanPath = &v
 		}
 		if v, ok := argString(args, "key_files"); ok && v != "" {
 			files := strings.Split(v, ",")
@@ -265,6 +271,9 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 		if f.SpecPath != "" {
 			fmt.Fprintf(&b, "Spec: %s\n", f.SpecPath)
 		}
+		if f.PlanPath != "" {
+			fmt.Fprintf(&b, "Plan: %s\n", f.PlanPath)
+		}
 
 		done, total, _ := s.GetFeatureProgress(id)
 		if total > 0 {
@@ -418,6 +427,33 @@ func getFullContextHandler(s *store.Store) server.ToolHandlerFunc {
 			Notes:     notes,
 		}, "", "  ")
 		return mcp.NewToolResultText(string(data)), nil
+	}
+}
+
+func deleteFeatureHandler(s *store.Store) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, ok := argString(args, "id")
+		if !ok || id == "" {
+			return mcp.NewToolResultError("missing required parameter: id"), nil
+		}
+
+		confirm, _ := args["confirm"].(bool)
+		if !confirm {
+			return mcp.NewToolResultError("Set confirm=true to permanently delete this feature and all its data"), nil
+		}
+
+		f, err := s.GetFeature(id)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		title := f.Title
+
+		if err := s.DeleteFeature(id); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Deleted feature %q (%s) and all related data", id, title)), nil
 	}
 }
 
