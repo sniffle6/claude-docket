@@ -139,6 +139,15 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string) {
 		mcp.WithDescription("Force a checkpoint of the current session's semantic and mechanical state. Enqueues a background summarization job. Pass end_session=true to also close the work session and write the handoff file."),
 		mcp.WithBoolean("end_session", mcp.Description("If true, close the work session and write handoff after checkpointing. Default: false.")),
 	), checkpointHandler(s, projectDir))
+
+	srv.AddTool(mcp.NewTool("search",
+		mcp.WithDescription("Search across all feature content: descriptions, decisions, issues, notes, sessions, tasks, and checkpoint observations. Supports FTS5 syntax: plain words, \"phrase match\", prefix*, AND/OR operators."),
+		mcp.WithString("query", mcp.Required(), mcp.Description("Search text — supports FTS5 syntax")),
+		mcp.WithString("scope", mcp.Description("Comma-separated entity types to search: feature, decision, issue, note, session, subtask, task_item, observation. Omit for all.")),
+		mcp.WithString("feature_id", mcp.Description("Limit search to one feature")),
+		mcp.WithBoolean("verbose", mcp.Description("Return full field values instead of snippets (default: false)")),
+		mcp.WithString("limit", mcp.Description("Max results to return (default: 20)")),
+	), searchHandler(s))
 }
 
 func parseInt64(s string) int64 {
