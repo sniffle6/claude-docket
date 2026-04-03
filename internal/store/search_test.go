@@ -170,6 +170,60 @@ func TestSearchVerbose(t *testing.T) {
 	}
 }
 
+func TestSearchPhraseMatch(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	s.AddFeature("Cache Feature", "Implement cache invalidation strategy")
+	s.AddFeature("Other Feature", "Invalidation of user sessions on logout")
+
+	// Phrase search should only match the exact phrase
+	results, err := s.Search(`"cache invalidation"`, SearchOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results for phrase search")
+	}
+	for _, r := range results {
+		if r.FeatureID == "other-feature" {
+			t.Error("phrase search should not match 'other-feature' which has the words separately")
+		}
+	}
+}
+
+func TestSearchPrefixMatch(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	s.AddFeature("Auth Feature", "Implement authentication and authorization")
+
+	// Prefix search: "auth*" should match authentication, authorization, auth
+	results, err := s.Search("auth*", SearchOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected results for prefix search 'auth*'")
+	}
+	found := false
+	for _, r := range results {
+		if r.FeatureID == "auth-feature" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("prefix search should match auth-feature")
+	}
+}
+
 func TestSearchTriggerSync(t *testing.T) {
 	s, err := Open(t.TempDir())
 	if err != nil {

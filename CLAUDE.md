@@ -51,12 +51,14 @@ Then run `/reload-plugins` (restarts the MCP server with the new binary). Plugin
 - `cmd/docket/handoff.go` — thin wrappers delegating to internal/handoff
 - `cmd/docket/update.go` — CLAUDE.md snippet sync command
 - `cmd/docket/export.go` — handoff file export for context resets
-- `internal/mcp/tools.go` — tool registration (18 tools), handlers split across tools_*.go
+- `internal/mcp/tools.go` — tool registration (19 tools), handlers split across tools_*.go
 - `internal/mcp/tools_note.go` — add_note MCP tool handler
 - `internal/mcp/tools_checkpoint.go` — checkpoint MCP tool, transcript path finder
 - `internal/mcp/tools_session.go` — session-related MCP tool handlers (compact_sessions)
+- `internal/mcp/tools_search.go` — search MCP tool handler (FTS5 cross-feature search)
 - `internal/store/store.go` — SQLite data layer, Feature/FeatureUpdate structs, completion gate
-- `internal/store/migrate.go` — schema migrations (v1-v13)
+- `internal/store/search.go` — FTS5 search query methods (Search, RebuildSearchIndex)
+- `internal/store/migrate.go` — schema migrations (v1-v16)
 - `internal/store/checkpoint.go` — checkpoint job queue + observation CRUD
 - `internal/store/worksession.go` — work session CRUD (open, close, get active)
 - `internal/store/templates.go` — feature type templates (feature/bugfix/chore/spike)
