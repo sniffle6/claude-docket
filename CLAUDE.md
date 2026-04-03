@@ -51,7 +51,7 @@ Then run `/reload-plugins` (restarts the MCP server with the new binary). Plugin
 - `cmd/docket/handoff.go` — thin wrappers delegating to internal/handoff
 - `cmd/docket/update.go` — CLAUDE.md snippet sync command
 - `cmd/docket/export.go` — handoff file export for context resets
-- `internal/mcp/tools.go` — tool registration (19 tools), handlers split across tools_*.go
+- `internal/mcp/tools.go` — tool registration (20 tools), handlers split across tools_*.go
 - `internal/mcp/tools_note.go` — add_note MCP tool handler
 - `internal/mcp/tools_checkpoint.go` — checkpoint MCP tool, transcript path finder
 - `internal/mcp/tools_session.go` — session-related MCP tool handlers (compact_sessions)

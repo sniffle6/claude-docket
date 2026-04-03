@@ -324,6 +324,14 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
   }
+  .status-subagent {
+    color: var(--teal);
+  }
+  .status-subagent .pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--teal);
+    animation: pulse 2s ease-in-out infinite;
+  }
   .status-attention {
     color: var(--yellow);
     font-weight: 600;
@@ -331,6 +339,14 @@
   .status-attention .pulse {
     width: 6px; height: 6px; border-radius: 50%;
     background: var(--yellow);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .status-launching {
+    color: var(--muted);
+  }
+  .status-launching .pulse {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted);
     animation: pulse 1s ease-in-out infinite;
   }
   .status-stale {
@@ -490,6 +506,18 @@
   }
   .leftoff-callout:empty { display: none; }
 
+  /* Feature notes (user context) callout */
+  .feature-notes-callout {
+    background: var(--input-bg);
+    border-left: 3px solid var(--muted);
+    border-radius: 4px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+
   /* Notes textarea */
   .notes-textarea {
     width: 100%;
@@ -639,8 +667,21 @@
     font-size: 13px;
   }
   .note-item:first-child { border-top: none; }
-  .note-content { color: var(--text); white-space: pre-wrap; }
+  .note-item-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .note-content { color: var(--text); white-space: pre-wrap; flex: 1; }
   .note-time { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .note-delete-btn {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 4px; cursor: pointer; padding: 2px 8px; font-size: 12px;
+    flex-shrink: 0; margin-left: 8px;
+  }
+  .note-delete-btn:hover { border-color: var(--blocked); color: var(--blocked); }
+  .feature-delete-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 13px;
+    transition: all 0.15s;
+  }
+  .feature-delete-btn:hover { border-color: var(--blocked); color: var(--blocked); }
 
   .issue-item {
     display: flex;
@@ -886,7 +927,7 @@ function render() {
       var isStale = false;
       var staleMinutes = 0;
 
-      if ((state === 'working' || state === 'needs_attention') && lastHeartbeat) {
+      if ((state === 'working' || state === 'needs_attention' || state === 'subagent') && lastHeartbeat) {
         staleMinutes = Math.floor((Date.now() - lastHeartbeat.getTime()) / 60000);
         isStale = staleMinutes >= 5;
       }
@@ -906,17 +947,27 @@ function render() {
         statusSpan.className = 'session-status status-working';
         statusSpan.innerHTML = '<span class="pulse"></span> Working';
         headerRow.appendChild(statusSpan);
+      } else if (state === 'subagent') {
+        var statusSpan = document.createElement('span');
+        statusSpan.className = 'session-status status-subagent';
+        statusSpan.innerHTML = '<span class="pulse"></span> Subagent';
+        headerRow.appendChild(statusSpan);
       } else if (state === 'needs_attention') {
         var statusSpan = document.createElement('span');
         statusSpan.className = 'session-status status-attention';
         statusSpan.innerHTML = '<span class="pulse"></span> Waiting';
+        headerRow.appendChild(statusSpan);
+      } else if (state === 'launching') {
+        var statusSpan = document.createElement('span');
+        statusSpan.className = 'session-status status-launching';
+        statusSpan.innerHTML = '<span class="pulse"></span> Launching';
         headerRow.appendChild(statusSpan);
       }
 
       // Launch button
       var launchBtn = document.createElement('button');
       launchBtn.className = 'launch-btn';
-      if (state === 'working' && !isStale) {
+      if ((state === 'working' || state === 'subagent' || state === 'launching') && !isStale) {
         launchBtn.innerHTML = '&#8599;'; // ↗ focus icon
         launchBtn.title = 'Focus or manage session';
       } else {
@@ -986,6 +1037,18 @@ function render() {
           specBadge.onclick = function(e) { e.stopPropagation(); showSpec(path, title); };
         })(f.spec_path, f.title);
         card.appendChild(specBadge);
+      }
+
+      // Plan badge
+      if (f.plan_path) {
+        var planBadge = document.createElement('button');
+        planBadge.className = 'spec-badge';
+        planBadge.textContent = '\uD83D\uDDD3 Plan';
+        planBadge.title = f.plan_path;
+        (function(path, title) {
+          planBadge.onclick = function(e) { e.stopPropagation(); showSpec(path, title); };
+        })(f.plan_path, f.title);
+        card.appendChild(planBadge);
       }
 
       if (f.issue_count > 0) {
@@ -1067,6 +1130,16 @@ async function showDetail(id) {
   }
   panel.appendChild(slugDiv);
 
+  // Delete button
+  var deleteBtn = document.createElement('button');
+  deleteBtn.className = 'feature-delete-btn';
+  deleteBtn.textContent = 'Delete Feature';
+  deleteBtn.title = 'Permanently delete this feature and all its data';
+  (function(featureId, featureTitle) {
+    deleteBtn.onclick = function() { deleteFeature(featureId, featureTitle); };
+  })(f.id, f.title);
+  panel.appendChild(deleteBtn);
+
   // Description
   if (f.description) {
     var desc = document.createElement('div');
@@ -1085,6 +1158,18 @@ async function showDetail(id) {
     loCallout.className = 'leftoff-callout';
     loCallout.textContent = f.left_off;
     panel.appendChild(loCallout);
+  }
+
+  // Feature notes (user context set at creation / via update)
+  if (f.notes) {
+    var fnLabel = document.createElement('div');
+    fnLabel.className = 'panel-section-label';
+    fnLabel.textContent = 'Context';
+    panel.appendChild(fnLabel);
+    var fnCallout = document.createElement('div');
+    fnCallout.className = 'feature-notes-callout';
+    fnCallout.textContent = f.notes;
+    panel.appendChild(fnCallout);
   }
 
   // Notes — append form + entries list
@@ -1112,10 +1197,21 @@ async function showDetail(id) {
     var noteDiv = document.createElement('div');
     noteDiv.className = 'note-item';
 
+    var headerDiv = document.createElement('div');
+    headerDiv.className = 'note-item-header';
     var contentDiv = document.createElement('div');
     contentDiv.className = 'note-content';
     contentDiv.textContent = note.content;
-    noteDiv.appendChild(contentDiv);
+    headerDiv.appendChild(contentDiv);
+    var delBtn = document.createElement('button');
+    delBtn.className = 'note-delete-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete note';
+    (function(noteId, featureId) {
+      delBtn.onclick = function() { deleteNote(noteId, featureId); };
+    })(note.id, f.id);
+    headerDiv.appendChild(delBtn);
+    noteDiv.appendChild(headerDiv);
 
     var timeDiv = document.createElement('div');
     timeDiv.className = 'note-time';
@@ -1450,6 +1546,19 @@ async function saveNote(featureId) {
   input.value = '';
   load();
   if (currentPanelId) showDetail(currentPanelId);
+}
+
+async function deleteNote(noteId, featureId) {
+  await fetch(API + '/api/notes/' + noteId, { method: 'DELETE' });
+  load();
+  if (currentPanelId) showDetail(currentPanelId);
+}
+
+async function deleteFeature(featureId, featureTitle) {
+  if (!confirm('Permanently delete "' + featureTitle + '" and all its subtasks, decisions, notes, and issues?')) return;
+  await fetch(API + '/api/features/' + featureId, { method: 'DELETE' });
+  closePanel();
+  load();
 }
 
 async function submitIssue(featureId, description, taskItemId) {

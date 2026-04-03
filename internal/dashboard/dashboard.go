@@ -157,6 +157,15 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		writeJSON(w, map[string]string{"ok": "true"})
 	})
 
+	mux.HandleFunc("DELETE /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if err := s.DeleteFeature(id); err != nil {
+			http.Error(w, err.Error(), 404)
+			return
+		}
+		writeJSON(w, map[string]string{"ok": "true"})
+	})
+
 	mux.HandleFunc("POST /api/notes", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			FeatureID string `json:"feature_id"`
@@ -172,6 +181,20 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			return
 		}
 		writeJSON(w, note)
+	})
+
+	mux.HandleFunc("DELETE /api/notes/{id}", func(w http.ResponseWriter, r *http.Request) {
+		idStr := r.PathValue("id")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid note id", 400)
+			return
+		}
+		if err := s.DeleteNote(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		writeJSON(w, map[string]string{"ok": "true"})
 	})
 
 	mux.HandleFunc("POST /api/issues", func(w http.ResponseWriter, r *http.Request) {
