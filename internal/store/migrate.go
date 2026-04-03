@@ -180,6 +180,173 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 `
 
+const schemaV16 = `
+CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+	entity_type,
+	entity_id,
+	feature_id,
+	field_name,
+	content,
+	tokenize='porter unicode61'
+);
+
+-- === Features triggers ===
+CREATE TRIGGER IF NOT EXISTS search_features_insert AFTER INSERT ON features BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES
+		('feature', NEW.id, NEW.id, 'title', NEW.title),
+		('feature', NEW.id, NEW.id, 'description', NEW.description),
+		('feature', NEW.id, NEW.id, 'left_off', NEW.left_off),
+		('feature', NEW.id, NEW.id, 'notes', NEW.notes),
+		('feature', NEW.id, NEW.id, 'key_files', NEW.key_files),
+		('feature', NEW.id, NEW.id, 'tags', NEW.tags);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_features_delete AFTER DELETE ON features BEGIN
+	DELETE FROM search_index WHERE entity_type = 'feature' AND entity_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_features_update AFTER UPDATE ON features BEGIN
+	DELETE FROM search_index WHERE entity_type = 'feature' AND entity_id = OLD.id;
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES
+		('feature', NEW.id, NEW.id, 'title', NEW.title),
+		('feature', NEW.id, NEW.id, 'description', NEW.description),
+		('feature', NEW.id, NEW.id, 'left_off', NEW.left_off),
+		('feature', NEW.id, NEW.id, 'notes', NEW.notes),
+		('feature', NEW.id, NEW.id, 'key_files', NEW.key_files),
+		('feature', NEW.id, NEW.id, 'tags', NEW.tags);
+END;
+
+-- === Decisions triggers ===
+CREATE TRIGGER IF NOT EXISTS search_decisions_insert AFTER INSERT ON decisions BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES
+		('decision', CAST(NEW.id AS TEXT), NEW.feature_id, 'approach', NEW.approach),
+		('decision', CAST(NEW.id AS TEXT), NEW.feature_id, 'reason', NEW.reason);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_decisions_delete AFTER DELETE ON decisions BEGIN
+	DELETE FROM search_index WHERE entity_type = 'decision' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+-- === Issues triggers ===
+CREATE TRIGGER IF NOT EXISTS search_issues_insert AFTER INSERT ON issues BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('issue', CAST(NEW.id AS TEXT), NEW.feature_id, 'description', NEW.description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_issues_delete AFTER DELETE ON issues BEGIN
+	DELETE FROM search_index WHERE entity_type = 'issue' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+-- === Notes triggers ===
+CREATE TRIGGER IF NOT EXISTS search_notes_insert AFTER INSERT ON notes BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('note', CAST(NEW.id AS TEXT), NEW.feature_id, 'content', NEW.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_notes_delete AFTER DELETE ON notes BEGIN
+	DELETE FROM search_index WHERE entity_type = 'note' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+-- === Sessions triggers ===
+CREATE TRIGGER IF NOT EXISTS search_sessions_insert AFTER INSERT ON sessions BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('session', CAST(NEW.id AS TEXT), COALESCE(NEW.feature_id, ''), 'summary', NEW.summary);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_sessions_delete AFTER DELETE ON sessions BEGIN
+	DELETE FROM search_index WHERE entity_type = 'session' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_sessions_update AFTER UPDATE ON sessions BEGIN
+	DELETE FROM search_index WHERE entity_type = 'session' AND entity_id = CAST(OLD.id AS TEXT);
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('session', CAST(NEW.id AS TEXT), COALESCE(NEW.feature_id, ''), 'summary', NEW.summary);
+END;
+
+-- === Subtasks triggers ===
+CREATE TRIGGER IF NOT EXISTS search_subtasks_insert AFTER INSERT ON subtasks BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('subtask', CAST(NEW.id AS TEXT), NEW.feature_id, 'title', NEW.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_subtasks_delete AFTER DELETE ON subtasks BEGIN
+	DELETE FROM search_index WHERE entity_type = 'subtask' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+-- === Task items triggers (JOIN through subtasks for feature_id) ===
+CREATE TRIGGER IF NOT EXISTS search_task_items_insert AFTER INSERT ON task_items BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	SELECT 'task_item', CAST(NEW.id AS TEXT), s.feature_id, 'title', NEW.title
+	FROM subtasks s WHERE s.id = NEW.subtask_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_task_items_delete AFTER DELETE ON task_items BEGIN
+	DELETE FROM search_index WHERE entity_type = 'task_item' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_task_items_update AFTER UPDATE ON task_items BEGIN
+	DELETE FROM search_index WHERE entity_type = 'task_item' AND entity_id = CAST(OLD.id AS TEXT);
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	SELECT 'task_item', CAST(NEW.id AS TEXT), s.feature_id, 'title', NEW.title
+	FROM subtasks s WHERE s.id = NEW.subtask_id;
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	SELECT 'task_item', CAST(NEW.id AS TEXT), s.feature_id, 'outcome', NEW.outcome
+	FROM subtasks s WHERE s.id = NEW.subtask_id AND NEW.outcome != '';
+END;
+
+-- === Checkpoint observations triggers ===
+CREATE TRIGGER IF NOT EXISTS search_observations_insert AFTER INSERT ON checkpoint_observations BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES ('observation', CAST(NEW.id AS TEXT), NEW.feature_id, 'summary_text', NEW.summary_text);
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_observations_delete AFTER DELETE ON checkpoint_observations BEGIN
+	DELETE FROM search_index WHERE entity_type = 'observation' AND entity_id = CAST(OLD.id AS TEXT);
+END;
+
+DELETE FROM search_index;
+
+-- === Initial population from existing data ===
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'feature', id, id, 'title', title FROM features WHERE title != ''
+UNION ALL SELECT 'feature', id, id, 'description', description FROM features WHERE description != ''
+UNION ALL SELECT 'feature', id, id, 'left_off', left_off FROM features WHERE left_off != ''
+UNION ALL SELECT 'feature', id, id, 'notes', notes FROM features WHERE notes != ''
+UNION ALL SELECT 'feature', id, id, 'key_files', key_files FROM features WHERE key_files != '[]'
+UNION ALL SELECT 'feature', id, id, 'tags', tags FROM features WHERE tags != '[]';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'decision', CAST(id AS TEXT), feature_id, 'approach', approach FROM decisions WHERE approach != ''
+UNION ALL SELECT 'decision', CAST(id AS TEXT), feature_id, 'reason', reason FROM decisions WHERE reason != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'issue', CAST(id AS TEXT), feature_id, 'description', description FROM issues WHERE description != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'note', CAST(id AS TEXT), feature_id, 'content', content FROM notes WHERE content != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'session', CAST(id AS TEXT), COALESCE(feature_id, ''), 'summary', summary FROM sessions WHERE summary != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'subtask', CAST(id AS TEXT), feature_id, 'title', title FROM subtasks WHERE title != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'task_item', CAST(ti.id AS TEXT), s.feature_id, 'title', ti.title
+FROM task_items ti JOIN subtasks s ON s.id = ti.subtask_id WHERE ti.title != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'task_item', CAST(ti.id AS TEXT), s.feature_id, 'outcome', ti.outcome
+FROM task_items ti JOIN subtasks s ON s.id = ti.subtask_id WHERE ti.outcome != '';
+
+INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+SELECT 'observation', CAST(id AS TEXT), feature_id, 'summary_text', summary_text
+FROM checkpoint_observations WHERE summary_text != '';
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -212,5 +379,7 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV14)
 	// v15: add notes table
 	db.Exec(schemaV15)
+	// v16: add FTS5 search index with triggers and initial population
+	db.Exec(schemaV16)
 	return nil
 }
