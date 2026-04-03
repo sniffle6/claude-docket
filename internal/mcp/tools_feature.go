@@ -358,6 +358,38 @@ func getContextHandler(s *store.Store) server.ToolHandlerFunc {
 			b.WriteString("Tip: run `git log --stat` on these commits to see which files this feature touches.\n")
 		}
 
+		// Check key file overlaps with other in_progress features
+		if len(f.KeyFiles) > 0 {
+			inProgress, _ := s.ListFeatures("in_progress")
+			var others []store.Feature
+			for _, other := range inProgress {
+				if other.ID != id {
+					others = append(others, other)
+				}
+			}
+			if len(others) > 0 {
+				// Build list with only this feature + others for overlap check
+				all := append([]store.Feature{f}, others...)
+				overlaps := computeKeyFileOverlaps(all)
+				// Remove entries where this feature isn't involved
+				for file, ids := range overlaps {
+					found := false
+					for _, fid := range ids {
+						if fid == id {
+							found = true
+							break
+						}
+					}
+					if !found {
+						delete(overlaps, file)
+					}
+				}
+				if warning := formatOverlapWarning(overlaps); warning != "" {
+					b.WriteString(warning)
+				}
+			}
+		}
+
 		return mcp.NewToolResultText(b.String()), nil
 	}
 }

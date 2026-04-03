@@ -391,3 +391,64 @@ func TestFormatOverlapWarning_WithOverlaps(t *testing.T) {
 		t.Errorf("expected feature IDs in output, got %q", result)
 	}
 }
+
+func TestGetContextHandler_OverlapWarning(t *testing.T) {
+	s := testStore(t)
+
+	// Create two in_progress features sharing a key file
+	s.AddFeature("Feature A", "")
+	s.UpdateFeature("feature-a", store.FeatureUpdate{
+		Status:   strPtr("in_progress"),
+		KeyFiles: &[]string{"internal/store/store.go", "unique-a.go"},
+	})
+	s.AddFeature("Feature B", "")
+	s.UpdateFeature("feature-b", store.FeatureUpdate{
+		Status:   strPtr("in_progress"),
+		KeyFiles: &[]string{"internal/store/store.go", "unique-b.go"},
+	})
+
+	handler := getContextHandler(s)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"id": "feature-a"}
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if !strings.Contains(text, "Key file conflicts") {
+		t.Errorf("expected overlap warning, got:\n%s", text)
+	}
+	if !strings.Contains(text, "internal/store/store.go") {
+		t.Errorf("expected shared file in warning, got:\n%s", text)
+	}
+	if !strings.Contains(text, "feature-b") {
+		t.Errorf("expected conflicting feature ID in warning, got:\n%s", text)
+	}
+}
+
+func TestGetContextHandler_NoOverlapWarning(t *testing.T) {
+	s := testStore(t)
+
+	s.AddFeature("Feature A", "")
+	s.UpdateFeature("feature-a", store.FeatureUpdate{
+		Status:   strPtr("in_progress"),
+		KeyFiles: &[]string{"a.go"},
+	})
+	s.AddFeature("Feature B", "")
+	s.UpdateFeature("feature-b", store.FeatureUpdate{
+		Status:   strPtr("in_progress"),
+		KeyFiles: &[]string{"b.go"},
+	})
+
+	handler := getContextHandler(s)
+	req := mcp.CallToolRequest{}
+	req.Params.Arguments = map[string]any{"id": "feature-a"}
+	result, err := handler(context.Background(), req)
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	text := result.Content[0].(mcp.TextContent).Text
+	if strings.Contains(text, "Key file conflicts") {
+		t.Errorf("expected no overlap warning, got:\n%s", text)
+	}
+}
