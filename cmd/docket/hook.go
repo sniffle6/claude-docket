@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sniffle6/claude-docket/internal/store"
 	"github.com/sniffle6/claude-docket/internal/transcript"
@@ -150,6 +151,18 @@ func needsAttentionPath(cwd, sessionID string) string {
 	return filepath.Join(cwd, ".docket", "needs-attention-"+sessionID)
 }
 
+func commitsLogPath(cwd, sessionID string) string {
+	return filepath.Join(cwd, ".docket", "commits-"+sessionID+".log")
+}
+
+func transcriptOffsetPath(cwd, sessionID string) string {
+	return filepath.Join(cwd, ".docket", "transcript-offset-"+sessionID)
+}
+
+func agentNudgedPath(cwd, sessionID string) string {
+	return filepath.Join(cwd, ".docket", "agent-nudged-"+sessionID)
+}
+
 func handleSessionStart(h *hookInput, w io.Writer) {
 	s, err := store.Open(h.CWD)
 	if err != nil {
@@ -165,18 +178,11 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 		archiveMsg = fmt.Sprintf("[docket] Auto-archived %d features done >7 days: %s\n", len(archived), strings.Join(archived, ", "))
 	}
 
-	// Create/clear commits.log
-	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
-	os.WriteFile(commitsPath, []byte{}, 0644)
-
-	// Clear sentinels for new session
-	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
-	os.Remove(sentinelPath)
+	// Create/clear session-scoped state files
+	os.WriteFile(commitsLogPath(h.CWD, h.SessionID), []byte{}, 0644)
+	os.Remove(agentNudgedPath(h.CWD, h.SessionID))
 	os.Remove(agentPendingPath(h.CWD, h.SessionID))
-
-	// Reset transcript offset for new session
-	offsetPath := filepath.Join(h.CWD, ".docket", "transcript-offset")
-	os.WriteFile(offsetPath, []byte("0"), 0644)
+	os.WriteFile(transcriptOffsetPath(h.CWD, h.SessionID), []byte("0"), 0644)
 
 	features, err := s.ListFeatures("in_progress")
 	if err != nil {
@@ -188,19 +194,69 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	out := hookOutput{Continue: true}
 
 	if len(features) == 0 {
-		out.SystemMessage = archiveMsg + "[docket] No active features. Use docket MCP tools to create one."
+		out.SystemMessage = archiveMsg + fmt.Sprintf("[docket] Session: %s | No active features. Use docket MCP tools to create one.", h.SessionID)
 		json.NewEncoder(w).Encode(out)
 		return
 	}
 
-	var msg strings.Builder
-	topFeature := features[0]
+	var topFeature store.Feature
+
+	// Dashboard launch — bind to specific feature via env var
+	if launchFeature := os.Getenv("DOCKET_LAUNCH_FEATURE"); launchFeature != "" {
+		for _, f := range features {
+			if f.ID == launchFeature {
+				topFeature = f
+				break
+			}
+		}
+	}
+
+	// Occupancy-aware selection for manual sessions (or if dashboard feature not found)
+	if topFeature.ID == "" {
+		for _, f := range features {
+			openSess, _ := s.GetOpenWorkSessionForFeature(f.ID)
+			if openSess == nil {
+				topFeature = f
+				break
+			}
+			// Reclaim zombie: no mcp_pid claim, not a placeholder, stale heartbeat >24h
+			if openSess.McpPid == nil &&
+				openSess.ClaudeSessionID != "dashboard-launch" &&
+				openSess.LastHeartbeat != nil &&
+				time.Since(*openSess.LastHeartbeat) > 24*time.Hour {
+				topFeature = f
+				break
+			}
+		}
+	}
+
+	// Supersession fallback — only supersede real sessions, never placeholders
+	if topFeature.ID == "" {
+		for _, f := range features {
+			openSess, _ := s.GetOpenWorkSessionForFeature(f.ID)
+			if openSess != nil && openSess.ClaudeSessionID != "dashboard-launch" {
+				topFeature = f
+				break
+			}
+		}
+	}
+
+	// All features occupied by placeholders
+	if topFeature.ID == "" {
+		out.SystemMessage = archiveMsg + fmt.Sprintf(
+			"[docket] Session: %s | All in-progress features are occupied.\nUse get_ready to see features, then bind_session(feature_id=\"...\", session_id=\"%s\") to pick one.",
+			h.SessionID, h.SessionID,
+		)
+		json.NewEncoder(w).Encode(out)
+		return
+	}
 
 	ws, wsErr := s.OpenWorkSession(topFeature.ID, h.SessionID)
 	if wsErr == nil {
 		s.SetSessionState(ws.ID, "working")
 	}
 
+	var msg strings.Builder
 	handoffPath := filepath.Join(h.CWD, ".docket", "handoff", topFeature.ID+".md")
 
 	if content, err := os.ReadFile(handoffPath); err == nil {
@@ -231,6 +287,9 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 
 	// Other features: pointers or one-liners
 	for _, f := range features[1:] {
+		if f.ID == topFeature.ID {
+			continue
+		}
 		otherHandoff := filepath.Join(h.CWD, ".docket", "handoff", f.ID+".md")
 		if _, err := os.Stat(otherHandoff); err == nil {
 			msg.WriteString(fmt.Sprintf("\n[docket] Handoff available: .docket/handoff/%s.md", f.ID))
@@ -239,7 +298,11 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 		}
 	}
 
-	out.SystemMessage = archiveMsg + msg.String()
+	// Prepend session binding info
+	bindInfo := fmt.Sprintf("[docket] Session: %s | Feature: %s (id: %s)\nBind docket: bind_session(feature_id=%q, session_id=%q)\n\n",
+		h.SessionID, topFeature.Title, topFeature.ID, topFeature.ID, h.SessionID)
+
+	out.SystemMessage = archiveMsg + bindInfo + msg.String()
 	json.NewEncoder(w).Encode(out)
 }
 
@@ -267,18 +330,18 @@ func handleStop(h *hookInput, w io.Writer) {
 			s.TouchHeartbeat(ws.ID)
 
 			delta := parseTranscriptDelta(h)
-			if isDeltaMeaningful(h.CWD, delta) {
+			if isDeltaMeaningful(h.CWD, h.SessionID, delta) {
 				s.EnqueueCheckpointJob(store.CheckpointJobInput{
 					WorkSessionID:         ws.ID,
 					FeatureID:             ws.FeatureID,
 					Reason:                "stop",
 					TriggerType:           "auto",
-					TranscriptStartOffset: getTranscriptOffset(h.CWD),
+					TranscriptStartOffset: getTranscriptOffset(h.CWD, h.SessionID),
 					TranscriptEndOffset:   delta.EndOffset,
 					SemanticText:          delta.SemanticText,
 					MechanicalFacts:       delta.MechanicalFacts,
 				})
-				saveTranscriptOffset(h.CWD, delta.EndOffset)
+				saveTranscriptOffset(h.CWD, h.SessionID, delta.EndOffset)
 			}
 
 			json.NewEncoder(w).Encode(stopHookOutput{})
@@ -296,7 +359,7 @@ func handleStop(h *hookInput, w io.Writer) {
 	os.WriteFile(sentinelPath, []byte{}, 0644)
 
 	delta := parseTranscriptDelta(h)
-	if !isDeltaMeaningful(h.CWD, delta) {
+	if !isDeltaMeaningful(h.CWD, h.SessionID, delta) {
 		json.NewEncoder(w).Encode(stopHookOutput{})
 		return
 	}
@@ -306,13 +369,13 @@ func handleStop(h *hookInput, w io.Writer) {
 		FeatureID:             ws.FeatureID,
 		Reason:                "stop",
 		TriggerType:           "auto",
-		TranscriptStartOffset: getTranscriptOffset(h.CWD),
+		TranscriptStartOffset: getTranscriptOffset(h.CWD, h.SessionID),
 		TranscriptEndOffset:   delta.EndOffset,
 		SemanticText:          delta.SemanticText,
 		MechanicalFacts:       delta.MechanicalFacts,
 	})
 
-	saveTranscriptOffset(h.CWD, delta.EndOffset)
+	saveTranscriptOffset(h.CWD, h.SessionID, delta.EndOffset)
 	json.NewEncoder(w).Encode(stopHookOutput{})
 }
 
@@ -333,7 +396,7 @@ func handlePreCompact(h *hookInput, w io.Writer) {
 	s.TouchHeartbeat(ws.ID)
 
 	delta := parseTranscriptDelta(h)
-	startOffset := getTranscriptOffset(h.CWD)
+	startOffset := getTranscriptOffset(h.CWD, h.SessionID)
 
 	s.EnqueueCheckpointJob(store.CheckpointJobInput{
 		WorkSessionID:         ws.ID,
@@ -346,7 +409,7 @@ func handlePreCompact(h *hookInput, w io.Writer) {
 		MechanicalFacts:       delta.MechanicalFacts,
 	})
 
-	saveTranscriptOffset(h.CWD, delta.EndOffset)
+	saveTranscriptOffset(h.CWD, h.SessionID, delta.EndOffset)
 	json.NewEncoder(w).Encode(hookOutput{Continue: true})
 }
 
@@ -371,44 +434,31 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 			FeatureID:             ws.FeatureID,
 			Reason:                "session_end",
 			TriggerType:           "auto",
-			TranscriptStartOffset: getTranscriptOffset(h.CWD),
+			TranscriptStartOffset: getTranscriptOffset(h.CWD, h.SessionID),
 			TranscriptEndOffset:   delta.EndOffset,
 			SemanticText:          delta.SemanticText,
 			MechanicalFacts:       delta.MechanicalFacts,
 		})
 	}
 
-	features, _ := s.ListFeatures("in_progress")
-	if len(features) > 0 {
-		activeIDs := make(map[string]bool)
-		for _, f := range features {
-			activeIDs[f.ID] = true
-			data, err := s.GetHandoffData(f.ID)
-			if err != nil {
-				continue
-			}
-
-			var cpData *HandoffCheckpointData
-			if f.ID == ws.FeatureID {
-				obs, _ := s.GetObservationsForWorkSession(ws.ID)
-				mf, _ := s.GetMechanicalFactsForWorkSession(ws.ID)
-				if len(obs) > 0 || mf != nil {
-					cpData = &HandoffCheckpointData{
-						Observations:    obs,
-						MechanicalFacts: mf,
-					}
-				}
-			}
-
-			if writeErr := writeHandoffFileWithCheckpoints(h.CWD, data, cpData); writeErr != nil {
-				s.MarkHandoffStale(ws.ID)
+	// Only write handoff for this session's feature
+	data, hdErr := s.GetHandoffData(ws.FeatureID)
+	if hdErr == nil {
+		var cpData *HandoffCheckpointData
+		obs, _ := s.GetObservationsForWorkSession(ws.ID)
+		mf, _ := s.GetMechanicalFactsForWorkSession(ws.ID)
+		if len(obs) > 0 || mf != nil {
+			cpData = &HandoffCheckpointData{
+				Observations:    obs,
+				MechanicalFacts: mf,
 			}
 		}
-		cleanStaleHandoffs(h.CWD, activeIDs)
+		if writeErr := writeHandoffFileWithCheckpoints(h.CWD, data, cpData); writeErr != nil {
+			s.MarkHandoffStale(ws.ID)
+		}
 	}
 
-	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
-	os.Remove(commitsPath)
+	os.Remove(commitsLogPath(h.CWD, h.SessionID))
 	os.Remove(needsAttentionPath(h.CWD, h.SessionID))
 	os.Remove(agentPendingPath(h.CWD, h.SessionID))
 
@@ -435,7 +485,7 @@ func handlePreToolUse(h *hookInput, w io.Writer) {
 	defer s.Close()
 
 	// Check sentinel — already nudged this session
-	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
+	sentinelPath := agentNudgedPath(h.CWD, h.SessionID)
 	if _, err := os.Stat(sentinelPath); err == nil {
 		json.NewEncoder(w).Encode(allow)
 		return
@@ -549,8 +599,8 @@ func handlePostToolUse(h *hookInput, w io.Writer) {
 
 	line := strings.TrimSpace(string(output))
 
-	// Append to commits.log
-	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
+	// Append to session-scoped commits log
+	commitsPath := commitsLogPath(h.CWD, h.SessionID)
 	f, err := os.OpenFile(commitsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docket hook: open commits.log: %v\n", err)
@@ -631,7 +681,7 @@ func parseTranscriptDelta(h *hookInput) *transcript.Delta {
 	if h.TranscriptPath == "" {
 		return &transcript.Delta{}
 	}
-	offset := getTranscriptOffset(h.CWD)
+	offset := getTranscriptOffset(h.CWD, h.SessionID)
 	delta, err := transcript.Parse(h.TranscriptPath, offset)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docket hook: parse transcript: %v\n", err)
@@ -640,8 +690,8 @@ func parseTranscriptDelta(h *hookInput) *transcript.Delta {
 	return delta
 }
 
-func getTranscriptOffset(cwd string) int64 {
-	data, err := os.ReadFile(filepath.Join(cwd, ".docket", "transcript-offset"))
+func getTranscriptOffset(cwd, sessionID string) int64 {
+	data, err := os.ReadFile(transcriptOffsetPath(cwd, sessionID))
 	if err != nil {
 		return 0
 	}
@@ -650,17 +700,13 @@ func getTranscriptOffset(cwd string) int64 {
 	return offset
 }
 
-func saveTranscriptOffset(cwd string, offset int64) {
-	os.WriteFile(
-		filepath.Join(cwd, ".docket", "transcript-offset"),
-		[]byte(fmt.Sprintf("%d", offset)),
-		0644,
-	)
+func saveTranscriptOffset(cwd, sessionID string, offset int64) {
+	os.WriteFile(transcriptOffsetPath(cwd, sessionID), []byte(fmt.Sprintf("%d", offset)), 0644)
 }
 
-func isDeltaMeaningful(cwd string, delta *transcript.Delta) bool {
-	// Check commits.log (PostToolUse hook writes here)
-	commitsPath := filepath.Join(cwd, ".docket", "commits.log")
+func isDeltaMeaningful(cwd, sessionID string, delta *transcript.Delta) bool {
+	// Check session-scoped commits log (PostToolUse hook writes here)
+	commitsPath := commitsLogPath(cwd, sessionID)
 	if data, err := os.ReadFile(commitsPath); err == nil && len(strings.TrimSpace(string(data))) > 0 {
 		return true
 	}
