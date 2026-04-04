@@ -14,6 +14,8 @@ Staleness is a display-only concern — the DB stays in its last known state. Th
 |-------|-----------|--------|
 | Working | Green pulsing dot | Session is live, launch disabled |
 | Waiting | Yellow pulsing dot | Claude needs input, launch enabled |
+| Subagent | — | Claude dispatched a subagent; waiting for return |
+| Launching | — | Dashboard launch placeholder; real session pending |
 | Stale | Gray static dot + "(Xm)" | Session probably dead, launch enabled |
 | Idle | No indicator | No active session |
 

@@ -28,7 +28,7 @@ A background worker in the MCP server process polls the `checkpoint_jobs` table 
 - **summary**: narrative of what happened
 - **blockers**: anything blocking progress
 - **dead_ends**: approaches that didn't work
-- **decisions**: choices made
+- **decision_candidate**: choices made (surfaced for review)
 - **next_steps**: intent for next session
 - **gotchas**: non-obvious discoveries
 

@@ -34,5 +34,5 @@ The Stop hook deletes handoff files for features that are no longer in_progress.
 
 - `internal/handoff/render.go` -- Render, WriteFile, CleanStale
 - `cmd/docket/hook.go` -- Stop handler calls WriteFile; SessionStart reads handoff files
-- `internal/store/store.go` -- HandoffData struct and GetHandoffData method
+- `internal/store/handoff.go` -- HandoffData struct and GetHandoffData method
 - `plugin/agents/board-manager.md` -- agent instructions for enriching handoff files

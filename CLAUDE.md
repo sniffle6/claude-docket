@@ -51,14 +51,20 @@ Then run `/reload-plugins` (restarts the MCP server with the new binary). Plugin
 - `cmd/docket/handoff.go` — thin wrappers delegating to internal/handoff
 - `cmd/docket/update.go` — CLAUDE.md snippet sync command
 - `cmd/docket/export.go` — handoff file export for context resets
-- `internal/mcp/tools.go` — tool registration (20 tools), handlers split across tools_*.go
+- `internal/mcp/server.go` — MCP server setup, Binding state for multi-session support
+- `internal/mcp/tools.go` — tool registration (22 tools), handlers split across tools_*.go
+- `internal/mcp/tools_feature.go` — feature CRUD handlers (add, update, delete, list, get, get_context, get_ready, get_full_context)
+- `internal/mcp/tools_subtask.go` — subtask and task item handlers (add_subtask, add_task_item, complete_task_item)
+- `internal/mcp/tools_issue.go` — issue handlers (add_issue, resolve_issue, list_issues)
 - `internal/mcp/tools_note.go` — add_note MCP tool handler
+- `internal/mcp/tools_bind.go` — bind_session MCP tool handler
 - `internal/mcp/tools_checkpoint.go` — checkpoint MCP tool, transcript path finder
 - `internal/mcp/tools_session.go` — session-related MCP tool handlers (compact_sessions)
 - `internal/mcp/tools_search.go` — search MCP tool handler (FTS5 cross-feature search)
 - `internal/store/store.go` — SQLite data layer, Feature/FeatureUpdate structs, completion gate
 - `internal/store/search.go` — FTS5 search query methods (Search, RebuildSearchIndex)
-- `internal/store/migrate.go` — schema migrations (v1-v17)
+- `internal/store/migrate.go` — schema migrations (v1-v19)
+- `internal/store/handoff.go` — HandoffData struct and GetHandoffData method
 - `internal/store/checkpoint.go` — checkpoint job queue + observation CRUD
 - `internal/store/worksession.go` — work session CRUD (open, close, get active)
 - `internal/store/templates.go` — feature type templates (feature/bugfix/chore/spike)
@@ -71,7 +77,11 @@ Then run `/reload-plugins` (restarts the MCP server with the new binary). Plugin
 - `internal/handoff/render.go` — shared handoff rendering (used by hooks and MCP tools)
 - `internal/dashboard/dashboard.go` — HTTP dashboard server, API endpoints, SSE events
 - `internal/dashboard/launch.go` — launch prompt/script generation for dashboard play button
+- `internal/dashboard/launch_exec_windows.go` — Windows-specific launch execution
+- `internal/dashboard/launch_exec_unix.go` — Unix-specific launch execution
 - `dashboard/index.html` — single-file frontend (embedded via Go embed)
+- `cmd/docket/pid_windows.go` — Windows PID liveness check
+- `cmd/docket/pid_unix.go` — Unix PID liveness check
 - `plugin/` — Claude Code plugin (agent, skills, hooks, MCP config, binary at install time)
 - `plugin/.mcp.json` — MCP server config using `${CLAUDE_PLUGIN_ROOT}/docket.exe`
 
@@ -93,8 +103,8 @@ Both read/write the same SQLite database at `<project>/.docket/features.db`.
 
 ## Hook / MCP IPC
 
-- `commits.log` is written by PostToolUse hook (records commit hashes). Cleared by SessionEnd hook after handoff.
-- `transcript-offset` file tracks byte offset into Claude's JSONL transcript. Reset at SessionStart, advanced after each checkpoint.
+- `commits-{sessionID}.log` is written by PostToolUse hook (records commit hashes). Cleared by SessionEnd hook after handoff. Path via `commitsLogPath()`.
+- `transcript-offset-{sessionID}` file tracks byte offset into Claude's JSONL transcript. Reset at SessionStart, advanced after each checkpoint. Path via `transcriptOffsetPath()`.
 - Stop hook enqueues checkpoint jobs when transcript delta is meaningful (commits, errors, failed tests, 300+ chars, or non-trivial user input).
 - PreCompact hook always checkpoints (no threshold — context compression means data loss).
 - SessionEnd hook enqueues remaining delta, writes handoff files, closes work session.

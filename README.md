@@ -81,9 +81,10 @@ No manual tracking needed. See [docs/docket-hooks.md](docs/docket-hooks.md) for 
 
 The plugin includes a `board-manager` agent (runs on Sonnet) that autonomously:
 - Creates and finds feature cards before work begins
-- Matches commits to task items and marks them complete
 - Imports plan files as structured subtasks
-- Enriches handoff files with synthesized context
+- Restructures subtasks and manages complex board operations
+
+Commit-to-task matching is handled automatically by the PostToolUse hook — it detects `git commit` and nudges Claude with unchecked task items so it can call `complete_task_item` inline.
 
 ### Handoff Files
 
@@ -114,21 +115,25 @@ Each feature can have decisions logged against it — what was considered, wheth
 |------|---------|
 | `add_feature` | Create a feature. Optional `type` (feature/bugfix/chore/spike) auto-generates subtasks from template. |
 | `update_feature` | Update status, description, left_off, key_files, etc. Completion gate blocks `done` with unchecked items — use `force`/`force_reason` to override. |
-| `list_features` | Compact feature list, filterable by status. |
+| `delete_feature` | Permanently delete a feature and all its data. Requires `confirm=true`. |
+| `list_features` | Compact feature list, filterable by status and tag. |
 | `get_feature` | Full feature detail with sessions, subtasks, decisions. |
 | `get_context` | Token-efficient briefing (~15-20 lines). |
-| `get_ready` | Actionable features (in_progress first, then planned). |
+| `get_ready` | Actionable features (in_progress first, then planned). Warns on key file overlaps between features. |
 | `get_full_context` | Deep context dump for subagent research. |
-| `checkpoint` | Force a checkpoint mid-session (enqueues transcript delta for summarization). |
+| `checkpoint` | Force a checkpoint mid-session (enqueues transcript delta for summarization). Pass `end_session=true` to also close the work session. |
+| `bind_session` | Bind the MCP server to a work session. Required for multi-session support — called at session start. |
 | `compact_sessions` | Compress old sessions into a summary (keeps last 3). |
 | `import_plan` | Import markdown plan file as subtasks/task items. |
 | `add_subtask` | Add phase(s) — pipe-separated titles for batch. |
 | `add_task_item` | Add task(s) to a subtask — pipe-separated titles for batch. |
 | `complete_task_item` | Mark task(s) done — single or `items` JSON array for batch. |
 | `add_decision` | Log an approach decision (accepted/rejected with reason). |
+| `add_note` | Append findings, context, or observations to a feature card. |
 | `add_issue` | Log a bug/issue against a feature. |
 | `resolve_issue` | Mark an issue as resolved with optional commit hash. |
 | `list_issues` | List open issues, optionally filtered by feature. |
+| `search` | FTS5 cross-feature search across descriptions, decisions, issues, notes, sessions, tasks, and observations. |
 | `quick_track` | One-call tracking for small tasks (creates feature + logs session). |
 
 ## Dashboard
@@ -137,9 +142,14 @@ Run `/docket` to open the dashboard, or check `.docket/port` for the port number
 
 - **Kanban board**: Planned / In Progress / Blocked / Dev Complete / Done
 - Click a card for full detail — session history, subtasks, decisions, issues, key files
-- Edit notes inline per feature
+- **Session liveness indicators**: colored dots show working (red), waiting (yellow), stale (grey) status per feature
+- **Launch from dashboard**: play button opens a new Claude Code session with full feature context injected
+- **Search** across all features — descriptions, decisions, notes, sessions, tasks, observations
+- Edit notes and tags inline per feature
 - Create and resolve issues inline
+- Delete features from the dashboard
 - Issue badges on feature cards with open bug counts
+- Key file overlap warnings when multiple features touch the same files
 - Reassign unlinked sessions to features
 - Dark/light theme toggle
 
@@ -164,12 +174,18 @@ The installed plugin provides:
 - [docs/docket-hooks.md](docs/docket-hooks.md) — How automatic session tracking works
 - [docs/handoff-files.md](docs/handoff-files.md) — Cross-session context handoff
 - [docs/transcript-session-context.md](docs/transcript-session-context.md) — Transcript parsing, checkpoints, and session observations
+- [docs/multi-session-mcp.md](docs/multi-session-mcp.md) — Multi-session MCP server lifecycle and session isolation
 - [docs/decision-log.md](docs/decision-log.md) — Decision tracking per feature
+- [docs/notes.md](docs/notes.md) — Feature notes for findings and observations
 - [docs/feature-templates.md](docs/feature-templates.md) — Feature types, templates, and completion gate
 - [docs/tags-and-archival.md](docs/tags-and-archival.md) — Feature tags and auto-archival
 - [docs/issue-tracking.md](docs/issue-tracking.md) — Bug/issue tracking per feature
+- [docs/cross-feature-search.md](docs/cross-feature-search.md) — FTS5 search across all feature content
+- [docs/feature-deletion.md](docs/feature-deletion.md) — Feature deletion with cascading cleanup
+- [docs/key-files-overlap.md](docs/key-files-overlap.md) — Key file overlap detection between features
 - [docs/quick-track.md](docs/quick-track.md) — Lightweight one-call tracking for small tasks
 - [docs/dashboard-session-control.md](docs/dashboard-session-control.md) — Session indicators and launch-from-dashboard
+- [docs/dashboard-redesign.md](docs/dashboard-redesign.md) — Dashboard UI architecture and layout
 - [docs/session-heartbeat-staleness.md](docs/session-heartbeat-staleness.md) — Staleness detection for crashed sessions
 - [docs/plugin-deployment-model.md](docs/plugin-deployment-model.md) — Plugin marketplace/cache architecture
 - [docs/dev-workflow.md](docs/dev-workflow.md) — Dev build-deploy-reload cycle

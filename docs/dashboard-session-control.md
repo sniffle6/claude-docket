@@ -8,6 +8,8 @@ When you're working on a feature in Claude Code, the dashboard shows your sessio
 - **Idle** (grey dot) — No active session
 - **Working** (red dot) — Claude is actively working (tool use, editing, etc.)
 - **Needs Attention** (yellow dot) — Claude encountered an error, test failure, or stopped unexpectedly
+- **Subagent** — Claude dispatched a subagent and is waiting for it to return
+- **Launching** — Dashboard play button was clicked; placeholder session pending real Claude session
 
 The dashboard also provides a **Launch** button on each card that opens a new Claude Code session in Windows Terminal with full feature context injected via `--append-system-prompt-file` and an initial prompt telling Claude which feature to resume.
 
@@ -49,6 +51,8 @@ Feature cards display a colored dot in the top-right corner:
 | **idle** | Grey | No active work session |
 | **working** | Red (primary) | Claude is actively working |
 | **needs_attention** | Yellow (accent) | Work stopped or encountered an issue — check Claude Code output |
+| **subagent** | — | Claude dispatched a subagent; waiting for it to return |
+| **launching** | — | Dashboard launch initiated; real session hasn't started yet |
 
 ## Key Files
 

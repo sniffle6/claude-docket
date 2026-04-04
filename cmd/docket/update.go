@@ -24,6 +24,7 @@ After a commit — use **direct MCP calls**, not agent dispatch:
 - ` + "`update_feature`" + ` — left_off, key_files, status, tags. Completion gate blocks ` + "`done`" + ` with unchecked items — ` + "`force=true`" + ` + ` + "`force_reason`" + ` to override.
 - ` + "`complete_task_item`" + ` — check off items with outcome and commit_hash (` + "`items`" + ` JSON array for batch)
 - ` + "`add_decision`" + ` — accepted/rejected with reason
+- ` + "`add_note`" + ` — append findings, context, observations to a feature card
 - ` + "`add_issue`" + ` / ` + "`resolve_issue`" + ` — track bugs found during work
 
 Use ` + "`get_context`" + ` (not ` + "`get_feature`" + `) for routine status checks (~15 lines, token-efficient).
