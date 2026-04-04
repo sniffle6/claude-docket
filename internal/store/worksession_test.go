@@ -201,6 +201,67 @@ func TestGetActiveSessionStatesReturnsHeartbeat(t *testing.T) {
 	}
 }
 
+func TestOpenWorkSessionUpgradesPlaceholder(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Tag Editing", "dashboard tag editing")
+
+	// Simulate dashboard launch: creates placeholder session with "launching" state
+	s.CreatePlaceholderSession("tag-editing")
+	ph, _ := s.GetOpenWorkSessionForFeature("tag-editing")
+	if ph == nil {
+		t.Fatal("expected placeholder session")
+	}
+	if ph.SessionState != "launching" {
+		t.Errorf("placeholder SessionState = %q, want %q", ph.SessionState, "launching")
+	}
+	if ph.ClaudeSessionID != "dashboard-launch" {
+		t.Errorf("placeholder ClaudeSessionID = %q, want %q", ph.ClaudeSessionID, "dashboard-launch")
+	}
+
+	// Simulate real Claude session starting: should upgrade placeholder, not create new
+	ws, err := s.OpenWorkSession("tag-editing", "real-session-abc")
+	if err != nil {
+		t.Fatalf("OpenWorkSession: %v", err)
+	}
+	if ws.ID != ph.ID {
+		t.Errorf("expected upgrade (same ID %d), got new session %d", ph.ID, ws.ID)
+	}
+	if ws.ClaudeSessionID != "real-session-abc" {
+		t.Errorf("ClaudeSessionID = %q, want %q", ws.ClaudeSessionID, "real-session-abc")
+	}
+	// State should still be "launching" — caller sets to "working"
+	if ws.SessionState != "launching" {
+		t.Errorf("SessionState = %q, want %q (preserved from placeholder)", ws.SessionState, "launching")
+	}
+}
+
+func TestGetWorkSessionByClaudeSession(t *testing.T) {
+	s := openTestStore(t)
+	s.AddFeature("Feature A", "")
+	s.AddFeature("Feature B", "")
+
+	// Create placeholder for A (dashboard launch)
+	s.CreatePlaceholderSession("feature-a")
+
+	// Create real session for B
+	wsB, _ := s.OpenWorkSession("feature-b", "session-xyz")
+
+	// GetWorkSessionByClaudeSession should find B's session, not A's placeholder
+	ws, err := s.GetWorkSessionByClaudeSession("session-xyz")
+	if err != nil {
+		t.Fatalf("GetWorkSessionByClaudeSession: %v", err)
+	}
+	if ws.ID != wsB.ID {
+		t.Errorf("got session %d, want %d (session-xyz)", ws.ID, wsB.ID)
+	}
+
+	// Querying for unknown session returns error — no fallback to unrelated sessions
+	_, err = s.GetWorkSessionByClaudeSession("unknown-session")
+	if err == nil {
+		t.Error("expected error for unknown session, got nil")
+	}
+}
+
 func TestOpenWorkSessionSetsHeartbeat(t *testing.T) {
 	s := openTestStore(t)
 	s.AddFeature("Auth System", "token auth")

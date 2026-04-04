@@ -113,10 +113,10 @@ func runServe() {
 	defer cancel()
 
 	worker := checkpoint.NewWorker(s, summarizer)
-	go worker.Run(ctx, 5*time.Second)
+	go worker.Run(ctx, 500*time.Millisecond)
 
 	// Run MCP server on stdio (blocks)
-	mcpServer := docketmcp.NewServer(s, dir)
+	mcpServer := docketmcp.NewServer(s, dir, worker.Notify)
 	if err := server.ServeStdio(mcpServer); err != nil {
 		log.Fatalf("mcp server: %v", err)
 	}

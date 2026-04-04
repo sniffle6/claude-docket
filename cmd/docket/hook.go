@@ -140,6 +140,16 @@ func extractEventHint(data []byte) string {
 	return rest[:end]
 }
 
+// agentPendingPath returns the per-session sentinel path for tracking pending subagents.
+func agentPendingPath(cwd, sessionID string) string {
+	return filepath.Join(cwd, ".docket", "agent-pending-"+sessionID)
+}
+
+// needsAttentionPath returns the per-session sentinel path for the needs-attention state.
+func needsAttentionPath(cwd, sessionID string) string {
+	return filepath.Join(cwd, ".docket", "needs-attention-"+sessionID)
+}
+
 func handleSessionStart(h *hookInput, w io.Writer) {
 	s, err := store.Open(h.CWD)
 	if err != nil {
@@ -159,9 +169,10 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.WriteFile(commitsPath, []byte{}, 0644)
 
-	// Clear agent-nudged sentinel for new session
+	// Clear sentinels for new session
 	sentinelPath := filepath.Join(h.CWD, ".docket", "agent-nudged")
 	os.Remove(sentinelPath)
+	os.Remove(agentPendingPath(h.CWD, h.SessionID))
 
 	// Reset transcript offset for new session
 	offsetPath := filepath.Join(h.CWD, ".docket", "transcript-offset")
@@ -240,17 +251,48 @@ func handleStop(h *hookInput, w io.Writer) {
 	}
 	defer s.Close()
 
-	ws, err := s.GetActiveWorkSession()
+	ws, err := s.GetWorkSessionByClaudeSession(h.SessionID)
 	if err != nil {
 		json.NewEncoder(w).Encode(stopHookOutput{})
 		return
+	}
+
+	// Check if a subagent is running — if so, stay in "subagent" state
+	// instead of "needs_attention" (which shows "Waiting" on dashboard).
+	apPath := agentPendingPath(h.CWD, h.SessionID)
+	if pidData, err := os.ReadFile(apPath); err == nil {
+		pid := strings.TrimSpace(string(pidData))
+		if isPIDAlive(pid) {
+			s.SetSessionState(ws.ID, "subagent")
+			s.TouchHeartbeat(ws.ID)
+
+			delta := parseTranscriptDelta(h)
+			if isDeltaMeaningful(h.CWD, delta) {
+				s.EnqueueCheckpointJob(store.CheckpointJobInput{
+					WorkSessionID:         ws.ID,
+					FeatureID:             ws.FeatureID,
+					Reason:                "stop",
+					TriggerType:           "auto",
+					TranscriptStartOffset: getTranscriptOffset(h.CWD),
+					TranscriptEndOffset:   delta.EndOffset,
+					SemanticText:          delta.SemanticText,
+					MechanicalFacts:       delta.MechanicalFacts,
+				})
+				saveTranscriptOffset(h.CWD, delta.EndOffset)
+			}
+
+			json.NewEncoder(w).Encode(stopHookOutput{})
+			return
+		}
+		// PID dead — stale sentinel, clean up and fall through to needs_attention
+		os.Remove(apPath)
 	}
 
 	s.SetSessionState(ws.ID, "needs_attention")
 	s.TouchHeartbeat(ws.ID)
 
 	// Write sentinel so PostToolUse can skip SQLite open in the common case
-	sentinelPath := filepath.Join(h.CWD, ".docket", "needs-attention")
+	sentinelPath := needsAttentionPath(h.CWD, h.SessionID)
 	os.WriteFile(sentinelPath, []byte{}, 0644)
 
 	delta := parseTranscriptDelta(h)
@@ -282,7 +324,7 @@ func handlePreCompact(h *hookInput, w io.Writer) {
 	}
 	defer s.Close()
 
-	ws, err := s.GetActiveWorkSession()
+	ws, err := s.GetWorkSessionByClaudeSession(h.SessionID)
 	if err != nil {
 		json.NewEncoder(w).Encode(hookOutput{Continue: true})
 		return
@@ -316,7 +358,7 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 	}
 	defer s.Close()
 
-	ws, err := s.GetActiveWorkSession()
+	ws, err := s.GetWorkSessionByClaudeSession(h.SessionID)
 	if err != nil {
 		json.NewEncoder(w).Encode(stopHookOutput{})
 		return
@@ -367,7 +409,8 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 
 	commitsPath := filepath.Join(h.CWD, ".docket", "commits.log")
 	os.Remove(commitsPath)
-	os.Remove(filepath.Join(h.CWD, ".docket", "needs-attention"))
+	os.Remove(needsAttentionPath(h.CWD, h.SessionID))
+	os.Remove(agentPendingPath(h.CWD, h.SessionID))
 
 	s.SetSessionState(ws.ID, "idle")
 	s.CloseWorkSession(ws.ID)
@@ -378,6 +421,11 @@ func handlePreToolUse(h *hookInput, w io.Writer) {
 	allow := preToolUseOutput{
 		HookSpecificOutput: &preToolUseDecision{PermissionDecision: "allow"},
 	}
+
+	// Mark that a subagent is pending so Stop hook can distinguish
+	// "waiting for user" from "waiting for subagent".
+	apPath := agentPendingPath(h.CWD, h.SessionID)
+	os.WriteFile(apPath, []byte(fmt.Sprintf("%d", os.Getppid())), 0644)
 
 	s, err := store.Open(h.CWD)
 	if err != nil {
@@ -463,13 +511,21 @@ func formatUncheckedTasks(s *store.Store, featureID string) string {
 func handlePostToolUse(h *hookInput, w io.Writer) {
 	out := hookOutput{Continue: true}
 
-	// Flip session state back to working if Claude resumes after a stop.
+	// Clean up agent-pending sentinel — subagent has returned
+	apPath := agentPendingPath(h.CWD, h.SessionID)
+	hadAgentPending := false
+	if _, statErr := os.Stat(apPath); statErr == nil {
+		os.Remove(apPath)
+		hadAgentPending = true
+	}
+
+	// Flip session state back to working if Claude resumes after a stop or subagent.
 	// Check sentinel file first to avoid opening SQLite on every tool call.
-	sentinelPath := filepath.Join(h.CWD, ".docket", "needs-attention")
-	if _, statErr := os.Stat(sentinelPath); statErr == nil {
+	sentinelPath := needsAttentionPath(h.CWD, h.SessionID)
+	if _, statErr := os.Stat(sentinelPath); statErr == nil || hadAgentPending {
 		os.Remove(sentinelPath)
 		if s, err := store.Open(h.CWD); err == nil {
-			if ws, wsErr := s.GetActiveWorkSession(); wsErr == nil {
+			if ws, wsErr := s.GetWorkSessionByClaudeSession(h.SessionID); wsErr == nil {
 				s.SetSessionState(ws.ID, "working")
 				s.TouchHeartbeat(ws.ID)
 			}
@@ -518,7 +574,7 @@ func handlePostToolUse(h *hookInput, w io.Writer) {
 		return
 	}
 
-	if ws, wsErr := s.GetActiveWorkSession(); wsErr == nil {
+	if ws, wsErr := s.GetWorkSessionByClaudeSession(h.SessionID); wsErr == nil {
 		s.TouchHeartbeat(ws.ID)
 	}
 

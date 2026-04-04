@@ -15,7 +15,7 @@ import (
 	"github.com/sniffle6/claude-docket/internal/transcript"
 )
 
-func checkpointHandler(s *store.Store, projectDir string) server.ToolHandlerFunc {
+func checkpointHandler(s *store.Store, projectDir string, onCheckpoint func()) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		endSession := false
@@ -25,6 +25,8 @@ func checkpointHandler(s *store.Store, projectDir string) server.ToolHandlerFunc
 			}
 		}
 
+		// MCP tools don't receive a claude_session_id, so we use the generic
+		// query. Low risk: one MCP server per project, so typically one session.
 		ws, err := s.GetActiveWorkSession()
 		if err != nil {
 			return mcp.NewToolResultError("no active work session — nothing to checkpoint"), nil
@@ -68,6 +70,9 @@ func checkpointHandler(s *store.Store, projectDir string) server.ToolHandlerFunc
 		})
 		if err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("enqueue checkpoint: %v", err)), nil
+		}
+		if onCheckpoint != nil {
+			onCheckpoint()
 		}
 
 		// Update offset

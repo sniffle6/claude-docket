@@ -1241,7 +1241,7 @@ func TestPostToolUseFlipsSessionState(t *testing.T) {
 	s.Close()
 
 	// Write sentinel file (normally written by Stop hook)
-	os.WriteFile(filepath.Join(dir, ".docket", "needs-attention"), []byte{}, 0644)
+	os.WriteFile(filepath.Join(dir, ".docket", "needs-attention-sess-1"), []byte{}, 0644)
 
 	h := &hookInput{
 		SessionID:     "sess-1",
@@ -1277,7 +1277,7 @@ func TestPostToolUseFlipsSessionState(t *testing.T) {
 	}
 
 	// Verify sentinel was removed
-	if _, err := os.Stat(filepath.Join(dir, ".docket", "needs-attention")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, ".docket", "needs-attention-sess-1")); !os.IsNotExist(err) {
 		t.Error("expected needs-attention sentinel to be removed after flip")
 	}
 }

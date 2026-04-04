@@ -31,6 +31,24 @@ func (s *Store) OpenWorkSession(featureID, claudeSessionID string) (*WorkSession
 		return ws, nil
 	}
 
+	// Check for placeholder session (from dashboard launch) to upgrade
+	var placeholderID int64
+	phErr := s.db.QueryRow(
+		`SELECT id FROM work_sessions WHERE feature_id = ? AND claude_session_id = 'dashboard-launch' AND status = 'open'`,
+		featureID,
+	).Scan(&placeholderID)
+	if phErr == nil {
+		// Upgrade placeholder to real session
+		now := time.Now().UTC()
+		if _, err := s.db.Exec(
+			`UPDATE work_sessions SET claude_session_id = ?, last_heartbeat = ? WHERE id = ?`,
+			claudeSessionID, now, placeholderID,
+		); err != nil {
+			return nil, fmt.Errorf("upgrade placeholder session: %w", err)
+		}
+		return s.GetWorkSession(placeholderID)
+	}
+
 	// Close any other open sessions (one active session at a time)
 	s.db.Exec(`UPDATE work_sessions SET status = 'closed', ended_at = datetime('now') WHERE status = 'open'`)
 
@@ -58,7 +76,7 @@ func (s *Store) CreatePlaceholderSession(featureID string) error {
 	}
 	now := time.Now().UTC()
 	_, err := s.db.Exec(
-		`INSERT INTO work_sessions (feature_id, claude_session_id, status, started_at, last_heartbeat) VALUES (?, ?, 'open', ?, ?)`,
+		`INSERT INTO work_sessions (feature_id, claude_session_id, status, session_state, started_at, last_heartbeat) VALUES (?, ?, 'open', 'launching', ?, ?)`,
 		featureID, "dashboard-launch", now, now,
 	)
 	return err
@@ -77,6 +95,19 @@ func (s *Store) GetActiveWorkSession() (*WorkSession, error) {
 	row := s.db.QueryRow(
 		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale, last_heartbeat
          FROM work_sessions WHERE status = 'open' ORDER BY id DESC LIMIT 1`,
+	)
+	return scanWorkSession(row)
+}
+
+// GetWorkSessionByClaudeSession returns the open work session for a specific
+// Claude session ID. Returns an error if no matching session exists — callers
+// should treat this as "no session for this Claude instance" and skip session
+// state changes rather than grabbing an unrelated session.
+func (s *Store) GetWorkSessionByClaudeSession(claudeSessionID string) (*WorkSession, error) {
+	row := s.db.QueryRow(
+		`SELECT id, feature_id, claude_session_id, status, session_state, started_at, ended_at, handoff_stale, last_heartbeat
+         FROM work_sessions WHERE claude_session_id = ? AND status = 'open' ORDER BY id DESC LIMIT 1`,
+		claudeSessionID,
 	)
 	return scanWorkSession(row)
 }
@@ -110,7 +141,7 @@ func (s *Store) MarkHandoffStale(id int64) {
 // Returns an error if the session is not open.
 func (s *Store) SetSessionState(id int64, state string) error {
 	switch state {
-	case "idle", "working", "needs_attention":
+	case "idle", "working", "needs_attention", "subagent":
 	default:
 		return fmt.Errorf("invalid session state: %q", state)
 	}

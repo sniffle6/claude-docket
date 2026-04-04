@@ -6,11 +6,11 @@ import (
 	"github.com/sniffle6/claude-docket/internal/store"
 )
 
-func NewServer(s *store.Store, projectDir string) *server.MCPServer {
+func NewServer(s *store.Store, projectDir string, onCheckpoint func()) *server.MCPServer {
 	srv := server.NewMCPServer("docket", "0.1.0",
 		server.WithToolCapabilities(true),
 	)
 
-	registerTools(srv, s, projectDir)
+	registerTools(srv, s, projectDir, onCheckpoint)
 	return srv
 }
