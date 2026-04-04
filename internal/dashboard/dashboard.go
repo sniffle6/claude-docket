@@ -157,6 +157,18 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 		writeJSON(w, map[string]string{"ok": "true"})
 	})
 
+	mux.HandleFunc("GET /api/tags", func(w http.ResponseWriter, r *http.Request) {
+		tags, err := s.GetKnownTags()
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if tags == nil {
+			tags = []string{}
+		}
+		writeJSON(w, tags)
+	})
+
 	mux.HandleFunc("DELETE /api/features/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		if err := s.DeleteFeature(id); err != nil {

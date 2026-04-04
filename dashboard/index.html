@@ -398,6 +398,37 @@
   }
   html.light .tag-pill { border-color: #1A7A7240; color: #1A7A72; }
 
+  /* Tag Editor */
+  .tag-editor { margin-top: 4px; }
+  .tag-editor-pills { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+  .tag-editor-pill {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    border: 1px solid #4ECDC440; color: var(--teal);
+  }
+  html.light .tag-editor-pill { border-color: #1A7A7240; color: #1A7A72; }
+  .tag-editor-pill .tag-remove {
+    cursor: pointer; font-size: 13px; line-height: 1; opacity: 0.6;
+    background: none; border: none; color: inherit; padding: 0;
+  }
+  .tag-editor-pill .tag-remove:hover { opacity: 1; }
+  .tag-input-wrap { position: relative; }
+  .tag-input {
+    background: var(--input-bg); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 4px 8px; font-size: 12px; width: 100%;
+  }
+  .tag-input:focus { outline: none; border-color: var(--focus); }
+  .tag-suggestions {
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 10;
+    background: var(--elevated); border: 1px solid var(--border); border-radius: 6px;
+    max-height: 150px; overflow-y: auto; display: none;
+  }
+  .tag-suggestions.open { display: block; }
+  .tag-suggestion {
+    padding: 4px 10px; font-size: 12px; cursor: pointer; color: var(--text);
+  }
+  .tag-suggestion:hover, .tag-suggestion.active { background: var(--card-bg); color: var(--teal); }
+
   /* Done cards dimmed */
   .col-done .card { opacity: 0.65; }
   .col-done .card:hover { opacity: 1; }
@@ -1119,15 +1150,6 @@ async function showDetail(id) {
     typeBadge.textContent = f.type;
     slugDiv.appendChild(typeBadge);
   }
-  if (f.tags && f.tags.length > 0) {
-    for (var ti = 0; ti < f.tags.length; ti++) {
-      var tagPill = document.createElement('span');
-      tagPill.className = 'tag-pill';
-      tagPill.style.marginLeft = '6px';
-      tagPill.textContent = f.tags[ti];
-      slugDiv.appendChild(tagPill);
-    }
-  }
   panel.appendChild(slugDiv);
 
   // Delete button
@@ -1139,6 +1161,36 @@ async function showDetail(id) {
     deleteBtn.onclick = function() { deleteFeature(featureId, featureTitle); };
   })(f.id, f.title);
   panel.appendChild(deleteBtn);
+
+  // Tags editor
+  var tagLabel = document.createElement('div');
+  tagLabel.className = 'panel-section-label';
+  tagLabel.textContent = 'Tags';
+  panel.appendChild(tagLabel);
+  var tagEditor = document.createElement('div');
+  tagEditor.className = 'tag-editor';
+  var tagPills = document.createElement('div');
+  tagPills.className = 'tag-editor-pills';
+  tagPills.id = 'tagEditorPills';
+  tagEditor.appendChild(tagPills);
+  var currentTags = (f.tags || []).slice();
+  renderTagPills(tagPills, currentTags, f.id);
+  var tagInputWrap = document.createElement('div');
+  tagInputWrap.className = 'tag-input-wrap';
+  var tagInput = document.createElement('input');
+  tagInput.className = 'tag-input';
+  tagInput.id = 'tagInput';
+  tagInput.type = 'text';
+  tagInput.placeholder = 'Add tag...';
+  tagInput.setAttribute('autocomplete', 'off');
+  tagInputWrap.appendChild(tagInput);
+  var tagSuggestions = document.createElement('div');
+  tagSuggestions.className = 'tag-suggestions';
+  tagSuggestions.id = 'tagSuggestions';
+  tagInputWrap.appendChild(tagSuggestions);
+  tagEditor.appendChild(tagInputWrap);
+  panel.appendChild(tagEditor);
+  initTagInput(tagInput, tagSuggestions, tagPills, currentTags, f.id);
 
   // Description
   if (f.description) {
@@ -1531,6 +1583,121 @@ function toggleActivity(section, arrow) {
   } else {
     section.style.display = 'none';
     arrow.textContent = '\u25B8';
+  }
+}
+
+// Tag editor functions
+var _knownTags = null;
+async function fetchKnownTags() {
+  if (_knownTags !== null) return _knownTags;
+  try {
+    var resp = await fetch(API + '/api/tags');
+    _knownTags = await resp.json();
+  } catch (e) {
+    _knownTags = [];
+  }
+  return _knownTags;
+}
+
+function renderTagPills(container, tags, featureId) {
+  container.innerHTML = '';
+  for (var i = 0; i < tags.length; i++) {
+    var pill = document.createElement('span');
+    pill.className = 'tag-editor-pill';
+    pill.textContent = tags[i];
+    var removeBtn = document.createElement('button');
+    removeBtn.className = 'tag-remove';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.title = 'Remove tag';
+    (function(tag) {
+      removeBtn.onclick = function() {
+        var idx = tags.indexOf(tag);
+        if (idx !== -1) tags.splice(idx, 1);
+        renderTagPills(container, tags, featureId);
+        saveTags(featureId, tags);
+      };
+    })(tags[i]);
+    pill.appendChild(removeBtn);
+    container.appendChild(pill);
+  }
+}
+
+async function saveTags(featureId, tags) {
+  await fetch(API + '/api/features/' + featureId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tags: tags }),
+  });
+  _knownTags = null; // bust cache so new tags appear in suggestions
+  load();
+}
+
+function initTagInput(input, suggestionsEl, pillsContainer, tags, featureId) {
+  var activeIdx = -1;
+
+  input.addEventListener('input', async function() {
+    var val = input.value.trim().toLowerCase();
+    if (!val) { suggestionsEl.classList.remove('open'); return; }
+    var known = await fetchKnownTags();
+    var filtered = known.filter(function(t) {
+      return t.toLowerCase().indexOf(val) !== -1 && tags.indexOf(t) === -1;
+    });
+    suggestionsEl.innerHTML = '';
+    activeIdx = -1;
+    if (filtered.length === 0) { suggestionsEl.classList.remove('open'); return; }
+    for (var i = 0; i < filtered.length; i++) {
+      var opt = document.createElement('div');
+      opt.className = 'tag-suggestion';
+      opt.textContent = filtered[i];
+      opt.setAttribute('data-tag', filtered[i]);
+      (function(tag) {
+        opt.onclick = function() { addTag(tag); };
+      })(filtered[i]);
+      suggestionsEl.appendChild(opt);
+    }
+    suggestionsEl.classList.add('open');
+  });
+
+  input.addEventListener('keydown', function(e) {
+    var items = suggestionsEl.querySelectorAll('.tag-suggestion');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      activeIdx = Math.min(activeIdx + 1, items.length - 1);
+      updateActive(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      activeIdx = Math.max(activeIdx - 1, 0);
+      updateActive(items);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (activeIdx >= 0 && items[activeIdx]) {
+        addTag(items[activeIdx].getAttribute('data-tag'));
+      } else {
+        var val = input.value.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (val) addTag(val);
+      }
+    } else if (e.key === 'Escape') {
+      suggestionsEl.classList.remove('open');
+    }
+  });
+
+  input.addEventListener('blur', function() {
+    setTimeout(function() { suggestionsEl.classList.remove('open'); }, 150);
+  });
+
+  function updateActive(items) {
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', i === activeIdx);
+    }
+  }
+
+  function addTag(tag) {
+    if (tags.indexOf(tag) !== -1) return;
+    tags.push(tag);
+    renderTagPills(pillsContainer, tags, featureId);
+    input.value = '';
+    suggestionsEl.classList.remove('open');
+    saveTags(featureId, tags);
   }
 }
 

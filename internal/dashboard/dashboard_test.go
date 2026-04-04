@@ -199,3 +199,48 @@ func TestReassignSessionAPI(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 }
+
+func TestGetTagsAPI(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Feature One", "")
+	tags := []string{"infra", "ux"}
+	s.UpdateFeature("feature-one", store.FeatureUpdate{Tags: &tags})
+
+	handler := NewHandler(s, nil)
+	req := httptest.NewRequest("GET", "/api/tags", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	var result []string
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 tags, got %d: %v", len(result), result)
+	}
+}
+
+func TestPatchTagsViaFeatureAPI(t *testing.T) {
+	s := testStore(t)
+	s.AddFeature("Tagged", "")
+
+	handler := NewHandler(s, nil)
+	body := `{"tags":["deploy","mcp"]}`
+	req := httptest.NewRequest("PATCH", "/api/features/tagged", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	f, _ := s.GetFeature("tagged")
+	if len(f.Tags) != 2 || f.Tags[0] != "deploy" || f.Tags[1] != "mcp" {
+		t.Errorf("Tags = %v, want [deploy mcp]", f.Tags)
+	}
+}
