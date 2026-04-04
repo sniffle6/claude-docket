@@ -42,7 +42,7 @@ func (s *Store) OpenWorkSession(featureID, claudeSessionID string) (*WorkSession
 		// Upgrade placeholder to real session
 		now := time.Now().UTC()
 		if _, err := s.db.Exec(
-			`UPDATE work_sessions SET claude_session_id = ?, last_heartbeat = ? WHERE id = ?`,
+			`UPDATE work_sessions SET claude_session_id = ?, last_heartbeat = ?, session_state = 'working' WHERE id = ?`,
 			claudeSessionID, now, placeholderID,
 		); err != nil {
 			return nil, fmt.Errorf("upgrade placeholder session: %w", err)

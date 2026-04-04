@@ -234,9 +234,9 @@ func TestOpenWorkSessionUpgradesPlaceholder(t *testing.T) {
 	if ws.ClaudeSessionID != "real-session-abc" {
 		t.Errorf("ClaudeSessionID = %q, want %q", ws.ClaudeSessionID, "real-session-abc")
 	}
-	// State should still be "launching" — caller sets to "working"
-	if ws.SessionState != "launching" {
-		t.Errorf("SessionState = %q, want %q (preserved from placeholder)", ws.SessionState, "launching")
+	// Upgrade should transition state from "launching" to "working"
+	if ws.SessionState != "working" {
+		t.Errorf("SessionState = %q, want %q (transitioned on upgrade)", ws.SessionState, "working")
 	}
 }
 

@@ -102,12 +102,15 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 						fp.LastHeartbeat = nil
 					}
 				} else if openSess.ClaudeSessionID == "dashboard-launch" {
-					// Placeholder — check terminal PID
+					// Placeholder — check terminal PID and age
 					pDir := devDir
 					if pDir == "" {
 						pDir, _ = os.Getwd()
 					}
-					if !isWindowAlive(pDir, f.ID) {
+					placeholderAge := time.Since(openSess.StartedAt)
+					if !isWindowAlive(pDir, f.ID) || placeholderAge > 3*time.Minute {
+						// Terminal died, or placeholder is stale (hook should
+						// upgrade within seconds — 3 min means it failed)
 						s.CloseWorkSession(openSess.ID)
 						fp.SessionState = ""
 						fp.LastHeartbeat = nil
@@ -330,7 +333,8 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 					openSession = nil
 				}
 			} else if openSession.ClaudeSessionID == "dashboard-launch" {
-				if !isWindowAlive(projDir, id) {
+				placeholderAge := time.Since(openSession.StartedAt)
+				if !isWindowAlive(projDir, id) || placeholderAge > 3*time.Minute {
 					s.CloseWorkSession(openSession.ID)
 					openSession = nil
 				}
