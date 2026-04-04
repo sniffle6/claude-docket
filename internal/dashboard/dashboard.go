@@ -116,8 +116,12 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 						fp.LastHeartbeat = nil
 					}
 				} else {
-					// No mcp_pid, not a placeholder — unknown liveness
-					fp.SessionState = "unlinked"
+					// No mcp_pid, not a placeholder — trust DB state if
+					// heartbeat is recent (hook sets state before bind_session
+					// claims with mcp_pid). Only mark unlinked if stale.
+					if openSess.LastHeartbeat != nil && time.Since(*openSess.LastHeartbeat) > 5*time.Minute {
+						fp.SessionState = "unlinked"
+					}
 				}
 			}
 
