@@ -4,29 +4,44 @@ Detects crashed or killed Claude Code sessions and shows them as "Stale" on the 
 
 ## How It Works
 
-Every hook event (Stop, PreCompact, PostToolUse with state flip or git commit) updates a `last_heartbeat` timestamp on the work session in SQLite. When the dashboard renders, it compares the heartbeat age against a 5-minute threshold. If the heartbeat is older than 5 minutes and the session is still marked as "working" or "needs_attention," the dashboard shows a gray "Stale (Xm)" indicator instead.
+Heartbeat is updated from two sources:
 
-Staleness is a display-only concern — the DB stays in its last known state. This is because the MCP server (which writes to the DB) dies with the Claude session, so it can't update its own state when it crashes.
+1. **State-change hooks** — Stop, PreCompact, and PostToolUse (on state flip or git commit) update `last_heartbeat` in SQLite directly.
+2. **Periodic PostToolUse heartbeat** — Every PostToolUse checks a file timestamp (`heartbeat-{sessionID}`). If >2 minutes since last update, it opens SQLite and touches the heartbeat. This keeps heartbeats fresh during normal tool use without opening SQLite on every call.
+
+The dashboard compares heartbeat age against a 5-minute threshold. If the heartbeat is older than 5 minutes and the session is still marked "working," "needs_attention," or "subagent," the dashboard shows a gray "Stale (Xm)" indicator.
+
+Staleness is a display-only concern — the DB stays in its last known state. The MCP server dies with the Claude session, so it can't update its own state when it crashes.
 
 ## Dashboard Indicators
 
 | State | Indicator | Action |
 |-------|-----------|--------|
-| Working | Green pulsing dot | Session is live, launch disabled |
-| Waiting | Yellow pulsing dot | Claude needs input, launch enabled |
-| Subagent | — | Claude dispatched a subagent; waiting for return |
-| Launching | — | Dashboard launch placeholder; real session pending |
-| Stale | Gray static dot + "(Xm)" | Session probably dead, launch enabled |
+| Working | Green pulsing dot | Session is live |
+| Waiting | Yellow pulsing dot | Claude needs input |
+| Subagent | Purple pulsing dot | Claude dispatched a subagent |
+| Launching | Blue pulsing dot | Dashboard launch placeholder; real session pending |
+| Stale | Gray static dot + "(Xm)" | Session probably dead |
 | Idle | No indicator | No active session |
+
+Stale and launching cards show a force-close button (×) that immediately closes the work session via `DELETE /api/sessions/{featureId}`.
 
 ## Cleanup
 
-Stale sessions auto-resolve when a new session starts — `OpenWorkSession` closes all other open sessions. No manual cleanup needed.
+- **Stale sessions** auto-resolve when a new session starts — `OpenWorkSession` closes other open sessions for the same feature.
+- **Placeholder sessions** are auto-closed after 3 minutes if the hook hasn't upgraded them (terminal alive or not).
+- **Sessions without mcp_pid** are reclaimable after 5 minutes of stale heartbeat in both the features list and launch endpoint.
+- **Force-close** — dashboard × button closes any stale or launching session immediately.
+
+## Heartbeat File Lifecycle
+
+- `SessionStart` creates `heartbeat-{sessionID}` (fresh file).
+- `PostToolUse` touches the file every 2+ minutes (throttle gate).
+- `SessionEnd` removes the file.
 
 ## Key Files
 
-- `internal/store/migrate.go` — V13 migration (last_heartbeat column)
-- `internal/store/worksession.go` — `TouchHeartbeat`, `SessionStateInfo`, updated `GetActiveSessionStates`
-- `cmd/docket/hook.go` — heartbeat calls in Stop, PreCompact, PostToolUse hooks
-- `dashboard/index.html` — staleness evaluation and rendering
-- `internal/dashboard/dashboard.go` — passes `last_heartbeat` through API, stale-aware launch check
+- `internal/store/worksession.go` — `TouchHeartbeat`, `SessionStateInfo`, `GetActiveSessionStates`
+- `cmd/docket/hook.go` — heartbeat calls in Stop, PreCompact, PostToolUse hooks; periodic heartbeat throttle
+- `dashboard/index.html` — staleness evaluation, rendering, force-close button
+- `internal/dashboard/dashboard.go` — liveness checks (PID, placeholder age, heartbeat staleness), `DELETE /api/sessions` endpoint
