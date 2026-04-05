@@ -1010,6 +1010,22 @@ function render() {
       })(f.id);
       headerRow.appendChild(launchBtn);
 
+      // Close button — shown for stale or launching sessions
+      if (isStale || state === 'launching') {
+        var closeBtn = document.createElement('button');
+        closeBtn.className = 'launch-btn';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.title = 'Force close session';
+        closeBtn.style.color = 'var(--blocked)';
+        (function(fid) {
+          closeBtn.onclick = function(e) {
+            e.stopPropagation();
+            fetch(API + '/api/sessions/' + fid, { method: 'DELETE' }).then(function() { load(); });
+          };
+        })(f.id);
+        headerRow.appendChild(closeBtn);
+      }
+
       card.appendChild(headerRow);
 
       var idDiv = document.createElement('div');

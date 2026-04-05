@@ -183,6 +183,7 @@ func handleSessionStart(h *hookInput, w io.Writer) {
 	os.Remove(agentNudgedPath(h.CWD, h.SessionID))
 	os.Remove(agentPendingPath(h.CWD, h.SessionID))
 	os.WriteFile(transcriptOffsetPath(h.CWD, h.SessionID), []byte("0"), 0644)
+	os.WriteFile(filepath.Join(h.CWD, ".docket", "heartbeat-"+h.SessionID), []byte{}, 0644)
 
 	features, err := s.ListFeatures("in_progress")
 	if err != nil {
@@ -461,6 +462,7 @@ func handleSessionEnd(h *hookInput, w io.Writer) {
 	os.Remove(commitsLogPath(h.CWD, h.SessionID))
 	os.Remove(needsAttentionPath(h.CWD, h.SessionID))
 	os.Remove(agentPendingPath(h.CWD, h.SessionID))
+	os.Remove(filepath.Join(h.CWD, ".docket", "heartbeat-"+h.SessionID))
 
 	s.SetSessionState(ws.ID, "idle")
 	s.CloseWorkSession(ws.ID)
@@ -572,15 +574,32 @@ func handlePostToolUse(h *hookInput, w io.Writer) {
 	// Flip session state back to working if Claude resumes after a stop or subagent.
 	// Check sentinel file first to avoid opening SQLite on every tool call.
 	sentinelPath := needsAttentionPath(h.CWD, h.SessionID)
+	needsStateFlip := false
 	if _, statErr := os.Stat(sentinelPath); statErr == nil || hadAgentPending {
 		os.Remove(sentinelPath)
+		needsStateFlip = true
+	}
+
+	// Periodic heartbeat — throttled via file timestamp to avoid opening
+	// SQLite on every tool call. Without this, active sessions show "Stale"
+	// on the dashboard after 5 min of normal (non-commit) tool use.
+	needsHeartbeat := false
+	hbPath := filepath.Join(h.CWD, ".docket", "heartbeat-"+h.SessionID)
+	if info, err := os.Stat(hbPath); err != nil || time.Since(info.ModTime()) > 2*time.Minute {
+		needsHeartbeat = true
+	}
+
+	if needsStateFlip || needsHeartbeat {
 		if s, err := store.Open(h.CWD); err == nil {
 			if ws, wsErr := s.GetWorkSessionByClaudeSession(h.SessionID); wsErr == nil {
-				s.SetSessionState(ws.ID, "working")
+				if needsStateFlip {
+					s.SetSessionState(ws.ID, "working")
+				}
 				s.TouchHeartbeat(ws.ID)
 			}
 			s.Close()
 		}
+		os.WriteFile(hbPath, []byte{}, 0644)
 	}
 
 	if !strings.Contains(h.ToolInput.Command, "git commit") {

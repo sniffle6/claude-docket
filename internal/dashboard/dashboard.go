@@ -343,8 +343,9 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 					openSession = nil
 				}
 			} else {
-				// Unknown liveness — reclaim if stale (>24h heartbeat)
-				if openSession.LastHeartbeat != nil && time.Since(*openSession.LastHeartbeat) > 24*time.Hour {
+				// No mcp_pid, not a placeholder — reclaim if heartbeat stale.
+				// Uses same 5-min threshold as the features list liveness check.
+				if openSession.LastHeartbeat != nil && time.Since(*openSession.LastHeartbeat) > 5*time.Minute {
 					s.CloseWorkSession(openSession.ID)
 					openSession = nil
 				}
@@ -476,6 +477,26 @@ func NewHandler(s *store.Store, static fs.FS, projectDir ...string) http.Handler
 			info["session_claude_id"] = openSession.ClaudeSessionID
 		}
 		writeJSON(w, info)
+	})
+
+	// Force-close a work session for a feature — used by dashboard close button
+	mux.HandleFunc("DELETE /api/sessions/{featureId}", func(w http.ResponseWriter, r *http.Request) {
+		fid := r.PathValue("featureId")
+		ws, err := s.GetOpenWorkSessionForFeature(fid)
+		if err != nil || ws == nil {
+			http.Error(w, "no open session", 404)
+			return
+		}
+		s.CloseWorkSession(ws.ID)
+
+		// Clean up PID file if it was a placeholder launch
+		projDir := devDir
+		if projDir == "" {
+			projDir, _ = os.Getwd()
+		}
+		os.Remove(filepath.Join(projDir, ".docket", "launch", fid+".pid"))
+
+		writeJSON(w, map[string]any{"closed": true, "session_id": ws.ID})
 	})
 
 	mux.HandleFunc("GET /api/project", func(w http.ResponseWriter, r *http.Request) {
