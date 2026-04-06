@@ -368,6 +368,43 @@ ALTER TABLE features ADD COLUMN plan_path TEXT NOT NULL DEFAULT '';
 
 const schemaV19 = `ALTER TABLE work_sessions ADD COLUMN mcp_pid INTEGER;`
 
+const schemaV20 = `
+ALTER TABLE features ADD COLUMN synthesis TEXT NOT NULL DEFAULT '';
+ALTER TABLE features ADD COLUMN synthesis_obs_id INTEGER NOT NULL DEFAULT 0;
+
+DROP TRIGGER IF EXISTS search_features_insert;
+CREATE TRIGGER search_features_insert AFTER INSERT ON features BEGIN
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES
+		('feature', NEW.id, NEW.id, 'title', NEW.title),
+		('feature', NEW.id, NEW.id, 'description', NEW.description),
+		('feature', NEW.id, NEW.id, 'left_off', NEW.left_off),
+		('feature', NEW.id, NEW.id, 'notes', NEW.notes),
+		('feature', NEW.id, NEW.id, 'key_files', NEW.key_files),
+		('feature', NEW.id, NEW.id, 'tags', NEW.tags),
+		('feature', NEW.id, NEW.id, 'synthesis', NEW.synthesis);
+END;
+
+DROP TRIGGER IF EXISTS search_features_delete;
+CREATE TRIGGER search_features_delete AFTER DELETE ON features BEGIN
+	DELETE FROM search_index WHERE entity_type = 'feature' AND entity_id = OLD.id;
+END;
+
+DROP TRIGGER IF EXISTS search_features_update;
+CREATE TRIGGER search_features_update AFTER UPDATE ON features BEGIN
+	DELETE FROM search_index WHERE entity_type = 'feature' AND entity_id = OLD.id;
+	INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
+	VALUES
+		('feature', NEW.id, NEW.id, 'title', NEW.title),
+		('feature', NEW.id, NEW.id, 'description', NEW.description),
+		('feature', NEW.id, NEW.id, 'left_off', NEW.left_off),
+		('feature', NEW.id, NEW.id, 'notes', NEW.notes),
+		('feature', NEW.id, NEW.id, 'key_files', NEW.key_files),
+		('feature', NEW.id, NEW.id, 'tags', NEW.tags),
+		('feature', NEW.id, NEW.id, 'synthesis', NEW.synthesis);
+END;
+`
+
 func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaV1); err != nil {
 		return err
@@ -408,6 +445,8 @@ func migrate(db *sql.DB) error {
 	db.Exec(schemaV18)
 	// v19: add mcp_pid column to work_sessions
 	db.Exec(schemaV19)
+	// v20: add synthesis columns to features + update FTS5 triggers
+	db.Exec(schemaV20)
 	// Populate search index if empty (first run or after v17 recreate)
 	var count int
 	if err := db.QueryRow("SELECT COUNT(*) FROM search_index").Scan(&count); err == nil && count == 0 {
@@ -424,7 +463,8 @@ func populateSearchIndex(db *sql.DB) {
 		 UNION ALL SELECT 'feature', id, id, 'left_off', left_off FROM features WHERE left_off != ''
 		 UNION ALL SELECT 'feature', id, id, 'notes', notes FROM features WHERE notes != ''
 		 UNION ALL SELECT 'feature', id, id, 'key_files', key_files FROM features WHERE key_files != '[]'
-		 UNION ALL SELECT 'feature', id, id, 'tags', tags FROM features WHERE tags != '[]'`,
+		 UNION ALL SELECT 'feature', id, id, 'tags', tags FROM features WHERE tags != '[]'
+		 UNION ALL SELECT 'feature', id, id, 'synthesis', synthesis FROM features WHERE synthesis != ''`,
 
 		`INSERT INTO search_index(entity_type, entity_id, feature_id, field_name, content)
 		 SELECT 'decision', CAST(id AS TEXT), feature_id, 'approach', approach FROM decisions WHERE approach != ''

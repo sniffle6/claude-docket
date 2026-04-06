@@ -160,6 +160,10 @@ func registerTools(srv *server.MCPServer, s *store.Store, projectDir string, onC
 		mcp.WithBoolean("verbose", mcp.Description("Return full field values instead of snippets (default: false)")),
 		mcp.WithString("limit", mcp.Description("Max results to return (default: 20)")),
 	), searchHandler(s))
+
+	srv.AddTool(mcp.NewTool("lint_board",
+		mcp.WithDescription("Run board health checks. Flags stale in_progress features, gate bypasses (done with unchecked items), empty features, and stuck dev_complete features. No parameters."),
+	), lintBoardHandler(s))
 }
 
 func parseInt64(s string) int64 {
