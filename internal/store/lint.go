@@ -43,9 +43,11 @@ func (s *Store) LintBoard() (*LintReport, error) {
 	for rows.Next() {
 		var id, title string
 		var lastActivity *string
-		rows.Scan(&id, &title, &lastActivity)
+		if err := rows.Scan(&id, &title, &lastActivity); err != nil {
+			continue
+		}
 		detail := "no sessions"
-		if lastActivity != nil {
+		if lastActivity != nil && len(*lastActivity) >= 10 {
 			detail = fmt.Sprintf("last activity: %s", (*lastActivity)[:10])
 		}
 		report.Stale = append(report.Stale, LintFinding{ID: id, Title: title, Detail: detail})
@@ -67,7 +69,9 @@ func (s *Store) LintBoard() (*LintReport, error) {
 	for rows.Next() {
 		var id, title string
 		var unchecked int
-		rows.Scan(&id, &title, &unchecked)
+		if err := rows.Scan(&id, &title, &unchecked); err != nil {
+			continue
+		}
 		report.GateBypasses = append(report.GateBypasses, LintFinding{
 			ID: id, Title: title, Detail: fmt.Sprintf("%d unchecked items", unchecked),
 		})
@@ -88,7 +92,9 @@ func (s *Store) LintBoard() (*LintReport, error) {
 	}
 	for rows.Next() {
 		var id, title string
-		rows.Scan(&id, &title)
+		if err := rows.Scan(&id, &title); err != nil {
+			continue
+		}
 		report.Empty = append(report.Empty, LintFinding{ID: id, Title: title, Detail: "no activity"})
 	}
 	rows.Close()
@@ -104,9 +110,15 @@ func (s *Store) LintBoard() (*LintReport, error) {
 	}
 	for rows.Next() {
 		var id, title, updatedAt string
-		rows.Scan(&id, &title, &updatedAt)
+		if err := rows.Scan(&id, &title, &updatedAt); err != nil {
+			continue
+		}
+		detail := fmt.Sprintf("since: %s", updatedAt)
+		if len(updatedAt) >= 10 {
+			detail = fmt.Sprintf("since: %s", updatedAt[:10])
+		}
 		report.StuckDevComplete = append(report.StuckDevComplete, LintFinding{
-			ID: id, Title: title, Detail: fmt.Sprintf("since: %s", updatedAt[:10]),
+			ID: id, Title: title, Detail: detail,
 		})
 	}
 	rows.Close()
