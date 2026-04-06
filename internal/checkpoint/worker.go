@@ -65,6 +65,10 @@ func (w *Worker) ProcessOne() bool {
 	// If semantic text is empty, skip LLM call but still mark done
 	if job.SemanticText == "" {
 		w.store.CompleteCheckpointJob(job.ID, nil)
+		// Still run synthesis for session-ending checkpoints (observations may exist from earlier)
+		if job.Reason == "session_end" || job.Reason == "manual_end_session" {
+			w.synthesizeFeature(job.FeatureID)
+		}
 		return true
 	}
 
@@ -90,8 +94,8 @@ func (w *Worker) ProcessOne() bool {
 	// Auto-merge key_files from mechanical facts
 	w.mergeKeyFiles(job)
 
-	// Run feature synthesis after session_end checkpoint
-	if job.Reason == "session_end" {
+	// Run feature synthesis after session-ending checkpoints
+	if job.Reason == "session_end" || job.Reason == "manual_end_session" {
 		w.synthesizeFeature(job.FeatureID)
 	}
 
@@ -204,6 +208,11 @@ func (w *Worker) synthesizeFeature(featureID string) {
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "docket synthesis: synthesize %q: %v\n", featureID, err)
+		return
+	}
+
+	// Don't overwrite existing synthesis with empty text (e.g., NoopSummarizer)
+	if output.Text == "" {
 		return
 	}
 
