@@ -12,17 +12,21 @@ import (
 // CLISummarizer shells out to the Claude Code CLI for summarization.
 // Zero config — uses whatever auth Claude Code already has.
 type CLISummarizer struct {
-	model string
+	model    string
+	claudeBin string // absolute path to claude binary
 }
 
-func NewCLISummarizer(model string) *CLISummarizer {
-	return &CLISummarizer{model: model}
+func NewCLISummarizer(model, claudeBin string) *CLISummarizer {
+	return &CLISummarizer{model: model, claudeBin: claudeBin}
 }
 
-// CLIAvailable returns true if the claude CLI is in PATH.
-func CLIAvailable() bool {
-	_, err := exec.LookPath("claude")
-	return err == nil
+// FindClaudeBin returns the absolute path to the claude CLI, or "" if not found.
+func FindClaudeBin() string {
+	path, err := exec.LookPath("claude")
+	if err != nil {
+		return ""
+	}
+	return path
 }
 
 func (s *CLISummarizer) Summarize(ctx context.Context, input SummarizeInput) (*SummarizeOutput, error) {
@@ -80,7 +84,7 @@ Respond with ONLY the narrative text. No markdown headers, no bullet points, no 
 }
 
 func (s *CLISummarizer) run(ctx context.Context, instruction, stdinContent string) ([]byte, error) {
-	cmd := exec.CommandContext(ctx, "claude", "-p", instruction, "--model", s.model, "--output-format", "text")
+	cmd := exec.CommandContext(ctx, s.claudeBin, "-p", instruction, "--model", s.model, "--output-format", "text")
 	cmd.Stdin = strings.NewReader(stdinContent)
 
 	var stdout, stderr bytes.Buffer

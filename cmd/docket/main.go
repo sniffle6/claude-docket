@@ -127,9 +127,9 @@ func runServe() {
 	cfg := checkpoint.LoadConfig()
 	var summarizer checkpoint.SummarizerBackend
 	switch {
-	case cfg.UseCLI:
-		summarizer = checkpoint.NewCLISummarizer(cfg.Model)
-		log.Printf("Checkpoint summarizer: enabled (claude CLI, model: %s)", cfg.Model)
+	case cfg.ClaudeBin != "":
+		summarizer = checkpoint.NewCLISummarizer(cfg.Model, cfg.ClaudeBin)
+		log.Printf("Checkpoint summarizer: enabled (claude CLI: %s, model: %s)", cfg.ClaudeBin, cfg.Model)
 	case cfg.APIKey != "":
 		summarizer = checkpoint.NewAnthropicSummarizer(cfg)
 		log.Printf("Checkpoint summarizer: enabled (API, model: %s)", cfg.Model)

@@ -7,9 +7,9 @@ const defaultAPIModel = "claude-haiku-4-5-20251001"
 
 // Config holds summarizer configuration from environment variables.
 type Config struct {
-	APIKey string
-	Model  string
-	UseCLI bool // true = use claude CLI, false = use Anthropic API
+	APIKey    string
+	Model     string
+	ClaudeBin string // absolute path to claude binary (empty = not available)
 }
 
 // LoadConfig reads summarizer configuration from environment variables.
@@ -23,11 +23,12 @@ func LoadConfig() Config {
 	}
 
 	// Prefer CLI — zero config, uses Claude Code's auth
-	if CLIAvailable() {
+	// Resolve absolute path now so the worker doesn't depend on PATH later
+	if bin := FindClaudeBin(); bin != "" {
 		if model == "" {
 			model = defaultCLIModel
 		}
-		return Config{Model: model, UseCLI: true}
+		return Config{Model: model, ClaudeBin: bin}
 	}
 
 	// Fall back to direct API if key is set
